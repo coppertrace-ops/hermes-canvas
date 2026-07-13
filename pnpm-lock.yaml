@@ -66,6 +66,9 @@ importers:
       '@hermes/env':
         specifier: workspace:*
         version: link:../../packages/env
+      '@hermes/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
       '@hermes/render':
         specifier: workspace:*
         version: link:../../packages/render

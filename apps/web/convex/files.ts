@@ -1,0 +1,149 @@
+import { isDemoBypassEnabled } from "@hermes/env";
+import { LIMITS } from "@hermes/policy";
+import type { Id } from "./_generated/dataModel";
+import { httpAction, mutation, type MutationCtx } from "./_generated/server";
+
+/**
+ * Attachment upload + serving (OWNER: COURIER, plan §4 / §7).
+ *
+ * Two responsibilities live here, both security-load-bearing:
+ *
+ *  1. `generateUploadUrl` — the owner-only mutation the composer calls to get a
+ *     Convex storage upload URL. Human auth is enforced here (the frontend is not a
+ *     trust boundary, plan §6); the demo bypass is honored only in non-production.
+ *
+ *  2. `serveAttachment` — serves stored bytes as a DOWNLOAD, never inline. A
+ *     user-uploaded `.html`/`.svg` must never render in the app origin (stored-XSS
+ *     class, plan §4). We force `Content-Type: application/octet-stream`,
+ *     `X-Content-Type-Options: nosniff`, and `Content-Disposition: attachment`, plus
+ *     a belt-and-braces `Content-Security-Policy: sandbox`. This is the WARDEN
+ *     header policy; the size cap is imported from `@hermes/policy` so client and
+ *     server name the exact same 10 MB limit.
+ *
+ * OWNERSHIP / WIRING NOTE: Convex serves exactly one HTTP router (`convex/http.ts`,
+ * owned by LEDGER), which already carries a placeholder `/agent/attachments/:id`
+ * route delegating serving to `files*`. `serveAttachment` is exported for LEDGER to
+ * mount there (one line: `handler: serveAttachment`). Until then the header policy,
+ * the client guard, and the upload URL are all live and testable.
+ *
+ * FOLLOW-UP (additive, filed to LEDGER): persisting attachment metadata
+ * (name/mime/sha256/uploaded_by) and binding it to a message needs an `attachments`
+ * table + `messages.attachments` — both absent from the frozen schema. The serving
+ * path keys on the storage id and takes the display name as a query arg until that
+ * additive migration lands, so no security property depends on the missing table.
+ */
+
+// ---------------------------------------------------------------------------
+// Header policy (pure, testable). Replace with `@hermes/policy` exports verbatim
+// once WARDEN publishes the attachment header helper; the shape is intentionally
+// the one WARDEN's spec describes so the swap is a re-import, not a rewrite.
+// ---------------------------------------------------------------------------
+
+// Control chars (NUL..US and DEL). CR/LF here are the header-injection vector.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\x00-]/g;
+// Anything outside printable ASCII, for the Content-Disposition ascii fallback.
+const NON_ASCII = /[^ -~]/g;
+
+/** Strip control chars and header-injection vectors from a user-supplied filename. */
+export function sanitizeFilename(name: string): string {
+  const cleaned = name.replace(CONTROL_CHARS, "").replace(/["\\]/g, "").replace(/\//g, "_").trim();
+  return cleaned.length > 0 ? cleaned.slice(0, 255) : "attachment";
+}
+
+/**
+ * The exact response headers every attachment is served with. Download-only,
+ * un-sniffable, and inert even if a browser ignored the disposition.
+ */
+export function attachmentHeaders(
+  filename: string,
+  contentLength?: number,
+): Record<string, string> {
+  const safe = sanitizeFilename(filename);
+  const asciiFallback = safe.replace(NON_ASCII, "_");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/octet-stream",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Disposition": `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(safe)}`,
+    // Defense in depth: even if disposition were ignored, nothing can execute.
+    "Content-Security-Policy": "default-src 'none'; sandbox",
+    "Cache-Control": "private, no-store",
+  };
+  if (contentLength !== undefined && Number.isFinite(contentLength)) {
+    headers["Content-Length"] = String(contentLength);
+  }
+  return headers;
+}
+
+/** The authoritative attachment size cap (10 MB), from WARDEN's policy. */
+export const MAX_ATTACHMENT_BYTES = LIMITS.maxAttachmentBytes;
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+/** Require the authenticated owner. Demo bypass is honored only off-production. */
+async function requireOwner(ctx: MutationCtx): Promise<void> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (identity) return;
+  if (isDemoBypassEnabled()) return;
+  throw new Error("unauthorized: owner sign-in required to upload");
+}
+
+// ---------------------------------------------------------------------------
+// Upload
+// ---------------------------------------------------------------------------
+
+/**
+ * Mint a one-shot Convex storage upload URL for the owner. The client PUTs the file
+ * bytes directly to this URL (with its own 10 MB guard already applied) and receives
+ * a storage id back from Convex, which it then attaches to the outgoing message.
+ */
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx): Promise<string> => {
+    await requireOwner(ctx);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Serving (download-only)
+// ---------------------------------------------------------------------------
+
+/** Minimal safe headers for an error response (no body sniffing). */
+const ERROR_HEADERS = { "Content-Type": "text/plain", "X-Content-Type-Options": "nosniff" };
+
+/**
+ * Serve a stored attachment as a download. Requires the authenticated owner (the
+ * agent path is served via the service-token route in `http.ts`). The storage id is
+ * the last path segment; `?name=` supplies the display filename.
+ *
+ * Exported for LEDGER to mount on the `/agent/attachments/:id` (and a future human
+ * `/attachments/:id`) route in the single Convex HTTP router.
+ */
+export const serveAttachment = httpAction(async (ctx, request) => {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity && !isDemoBypassEnabled()) {
+    return new Response("unauthorized", { status: 401, headers: ERROR_HEADERS });
+  }
+
+  const url = new URL(request.url);
+  const storageId = url.pathname.split("/").filter(Boolean).pop();
+  if (!storageId) {
+    return new Response("bad request", { status: 400, headers: ERROR_HEADERS });
+  }
+
+  const blob = await ctx.storage.get(storageId as Id<"_storage">);
+  if (!blob) {
+    return new Response("not found", { status: 404, headers: ERROR_HEADERS });
+  }
+
+  // Defense in depth: an object that somehow exceeds the cap is refused, not served.
+  if (blob.size > MAX_ATTACHMENT_BYTES) {
+    return new Response("attachment too large", { status: 413, headers: ERROR_HEADERS });
+  }
+
+  const name = url.searchParams.get("name") ?? "attachment";
+  return new Response(blob, { status: 200, headers: attachmentHeaders(name, blob.size) });
+});

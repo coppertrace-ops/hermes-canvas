@@ -16,6 +16,7 @@
   "dependencies": {
     "@hermes/contract": "workspace:*",
     "@hermes/env": "workspace:*",
+    "@hermes/policy": "workspace:*",
     "@hermes/render": "workspace:*",
     "@hermes/ui": "workspace:*",
     "convex": "^1.17.4",
