@@ -1,0 +1,19 @@
+{
+  "name": "@hermes/connector",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Plain-Node Canvas API client shipped to the Hermes host (WS subscription + poll fallback + withRunReporting). OWNED BY LEDGER — ATLAS-seeded boundary stub.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@hermes/contract": "workspace:*"
+  }
+}

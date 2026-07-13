@@ -1,0 +1,15 @@
+# pnpm workspace definition — Turborepo-compatible.
+# Ownership note (see docs/fable-staged-implementation-plan.md §7):
+#   packages/contract, packages/connector -> LEDGER
+#   packages/policy                        -> WARDEN
+#   packages/ui                            -> GLASS
+#   packages/diff                          -> CHRONICLE
+#   packages/render                        -> PANES
+#   packages/env                           -> ATLAS (this agent)
+#   apps/web                               -> ATLAS scaffold; feature areas owned per §7
+#   apps/content                           -> WARDEN
+#   e2e                                    -> PROOF (e2e/security -> WARDEN)
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "e2e"

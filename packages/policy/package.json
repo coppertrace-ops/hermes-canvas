@@ -1,0 +1,16 @@
+{
+  "name": "@hermes/policy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Security policy: sanitizer config, CSP constants, attachment header policy, limits. OWNED BY WARDEN — ATLAS-seeded boundary stub.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist .turbo"
+  }
+}

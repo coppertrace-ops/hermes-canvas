@@ -1,0 +1,19 @@
+{
+  "name": "@hermes/diff",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Semantic diff engine (markdown structural+word, mermaid, board, html source). OWNED BY CHRONICLE — ATLAS-seeded boundary stub.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@hermes/contract": "workspace:*"
+  }
+}

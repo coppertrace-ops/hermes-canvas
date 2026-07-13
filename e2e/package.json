@@ -1,0 +1,12 @@
+{
+  "name": "@hermes/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "End-to-end test suite. OWNED BY PROOF (security e2e -> WARDEN). ATLAS-seeded placeholder; no runner wired yet.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:e2e": "node placeholder.mjs",
+    "clean": "rm -rf .turbo playwright-report test-results"
+  }
+}

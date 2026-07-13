@@ -1,0 +1,47 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "globalEnv": [
+    "NODE_ENV",
+    "CI",
+    "VERCEL",
+    "VERCEL_ENV"
+  ],
+  "globalPassThroughEnv": [
+    "CONVEX_DEPLOYMENT",
+    "CONVEX_DEPLOY_KEY",
+    "NEXT_PUBLIC_CONVEX_URL"
+  ],
+  "tasks": {
+    "codegen": {
+      "cache": false,
+      "outputs": ["convex/_generated/**"]
+    },
+    "build": {
+      "dependsOn": ["^build", "codegen"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "out/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["codegen"]
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build", "codegen"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}
