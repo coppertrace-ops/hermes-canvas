@@ -1,0 +1,28 @@
+{
+  "name": "hermes-canvas",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Hermes Canvas — authenticated workspace for a human and the Hermes agent (Wave 1, Phase 0 foundations).",
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "codegen": "turbo run codegen",
+    "check": "turbo run lint typecheck test",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "format": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "turbo": "^2.5.6",
+    "typescript": "^5.7.3"
+  }
+}
