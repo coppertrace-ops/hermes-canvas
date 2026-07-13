@@ -9,6 +9,7 @@ import type {
 } from "@hermes/contract";
 import { CanvasError, planRestoreArtifact } from "@hermes/contract";
 import { v } from "convex/values";
+import { requireOwner } from "./authGuard";
 import type { Doc } from "./_generated/dataModel";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import { reject, type WriteOutcome } from "./lib/outcome";
@@ -27,6 +28,14 @@ import {
  * subscribes to them and the `/agent/*` GET actions call them via `ctx.runQuery`.
  * Restore is a human action from the history UI (CHRONICLE consumes it), routed
  * through the same append-only plan as every other write.
+ *
+ * AUTH BOUNDARY (plan §6): `restoreArtifact` is the ONLY browser-callable mutation
+ * in this file and it is NOT reachable through `/agent/*`, so it `requireOwner`s at
+ * its top. The read queries here are DUAL-USE — the `/agent/*` GET routes reach
+ * `listArtifacts` / `readArtifact` / `pendingWork` via the service-token path where
+ * no user identity exists — so they deliberately do NOT adopt the owner guard;
+ * applying it would break the agent read path. Mixed read authorization is out of
+ * scope for this owner-write pass.
  */
 
 function summaryOf(doc: Doc<"artifacts">): ArtifactSummary {
@@ -170,10 +179,14 @@ export const pendingWork = query({
   },
 });
 
-/** Human restore from the history UI — appends a new version equal to `seq`. */
+/**
+ * Human restore from the history UI — appends a new version equal to `seq`.
+ * Browser-only (never reached via `/agent/*`), so it requires the signed-in owner.
+ */
 export const restoreArtifact = mutation({
   args: { artifact_id: v.string(), seq: v.number(), why: v.string() },
   handler: async (ctx, args): Promise<WriteOutcome> => {
+    await requireOwner(ctx);
     const now = Date.now();
     const author: Author = "human";
     const doc = await getArtifactByKey(ctx, args.artifact_id);

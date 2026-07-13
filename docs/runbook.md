@@ -90,13 +90,30 @@ it can never take effect on a deployed owner environment.
   commit. Schema changes after G1 are additive-only (the auth tables were added
   additively).
 
-## Residual work (owned by LEDGER/CHRONICLE, out of ATLAS's write scope)
+## Owner authorization on browser-only writes (DONE — WARDEN, `wave1/authz-guards`)
 
-The reusable owner guard is `convex/authGuard.ts::requireOwner`. The browser-only
-writes `canvas.restoreArtifact`, `human.sendMessage`, `lastSeen.markSeen`, and
-`metrics.recordEvent` should each `await requireOwner(ctx)` at their top (as
-`files.ts` already does for uploads). The dual-use read queries reached by the
-`/agent/*` HTTP layer via `ctx.runQuery` must NOT adopt it — no user identity
-exists on the service-token path — so that mixed authorization is LEDGER's to
-design. This is deliberately not patched here to respect the Wave 1 path-ownership
-split and the "do not alter chat/canvas/history business logic" boundary.
+The reusable owner guard is `convex/authGuard.ts::requireOwner`. It is now applied
+to every browser-initiated write — each `await requireOwner(ctx)` at the top of the
+handler, mirroring `files.ts::generateUploadUrl`:
+
+- `human.sendMessage` (`convex/human.ts`)
+- `canvas.restoreArtifact` (`convex/canvas.ts`)
+- `lastSeen.markSeen` (`convex/lastSeen.ts`)
+- `metrics.recordEvent` (`convex/metrics.ts`)
+
+The agent surface is deliberately untouched: the `/agent/*` HTTP routes gate on the
+service token (`lib/agentAuth.ts`) and delegate to the `internal.agentWrites.*`
+mutations, none of which adopt `requireOwner` — no user identity exists on the
+service-token path. The dual-use read queries that layer reaches via `ctx.runQuery`
+(`canvas.pendingWork` / `listArtifacts` / `readArtifact`) also stay un-guarded for
+the same reason; guarding them would break the agent read path.
+
+Browser-only READ queries (`lastSeen.getLastSeen`, `lastSeen.listArtifactChanges`,
+`metrics.readershipSummary`, `metrics.listEvents`) are left un-guarded within the
+scope of this owner-*write* pass: they expose only the single owner's own cursor /
+changed flags / readership counts, and no cross-tenant data exists in this
+single-owner deployment. Extending the guard to them (least-privilege hardening of
+reads) is a small, safe follow-up but out of this change's scope.
+
+The boundary is proven in `convex/authz.test.ts` (anonymous rejects, owner
+succeeds, agent internal path + dual-use reads stay open).
