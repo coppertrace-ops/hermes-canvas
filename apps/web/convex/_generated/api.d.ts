@@ -12,6 +12,7 @@ import type * as agentWrites from "../agentWrites.js";
 import type * as canvas from "../canvas.js";
 import type * as files from "../files.js";
 import type * as http from "../http.js";
+import type * as human from "../human.js";
 import type * as lastSeen from "../lastSeen.js";
 import type * as lib_agentAuth from "../lib/agentAuth.js";
 import type * as lib_outcome from "../lib/outcome.js";
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   canvas: typeof canvas;
   files: typeof files;
   http: typeof http;
+  human: typeof human;
   lastSeen: typeof lastSeen;
   "lib/agentAuth": typeof lib_agentAuth;
   "lib/outcome": typeof lib_outcome;

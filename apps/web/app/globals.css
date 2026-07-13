@@ -130,8 +130,14 @@ body {
   border-radius: var(--hc-radius-full, 999px);
   background: var(--hc-warning, #b8860b);
 }
+.hc-databanner--live {
+  background: var(--hc-success-subtle, var(--hc-surface-2));
+}
 .hc-databanner--live .hc-databanner__dot {
   background: var(--hc-success, #16a34a);
+}
+.hc-databanner--loading .hc-databanner__dot {
+  background: var(--hc-info, #2563eb);
 }
 .hc-databanner strong {
   color: var(--hc-text);

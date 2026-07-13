@@ -1,6 +1,7 @@
 import type {
   ArtifactRead,
   ArtifactSummary,
+  ArtifactVersion,
   Author,
   FeedEvent,
   FeedMessage,
@@ -39,6 +40,23 @@ function summaryOf(doc: Doc<"artifacts">): ArtifactSummary {
   };
 }
 
+/** Project a stored version row into the wire `ArtifactVersion` shape. */
+function versionOf(version: Doc<"versions">): ArtifactVersion {
+  return {
+    artifact_id: version.artifact_id,
+    seq: version.seq,
+    parent_seq: version.parent_seq,
+    content: version.content,
+    content_size: version.content_size,
+    author: version.author,
+    why: version.why,
+    contended: version.contended,
+    render_state: version.render_state,
+    resolved_action: version.resolved_action,
+    created_at: version.created_at,
+  };
+}
+
 /** Current global event seq (the updates cursor high-water mark). */
 async function currentCursor(ctx: QueryCtx): Promise<number> {
   const row = await ctx.db
@@ -68,20 +86,48 @@ export const readArtifact = query({
     if (!version) return null;
     return {
       artifact: summaryOf(doc),
-      version: {
-        artifact_id: version.artifact_id,
-        seq: version.seq,
-        parent_seq: version.parent_seq,
-        content: version.content,
-        content_size: version.content_size,
-        author: version.author,
-        why: version.why,
-        contended: version.contended,
-        render_state: version.render_state,
-        resolved_action: version.resolved_action,
-        created_at: version.created_at,
-      },
+      version: versionOf(version),
     };
+  },
+});
+
+/** Active tabs in display order — the live source for the canvas tab bar. */
+export const listTabs = query({
+  args: {},
+  handler: async (
+    ctx,
+  ): Promise<{ id: string; title: string; order: number; status: "active" | "archived" }[]> => {
+    const docs = await ctx.db.query("tabs").collect();
+    return docs
+      .filter((t) => t.status === "active")
+      .sort((a, b) => a.order - b.order)
+      .map((t) => ({ id: t._id, title: t.title, order: t.order, status: t.status }));
+  },
+});
+
+/**
+ * Full append-only version chain for one artifact (CHRONICLE history surface).
+ *
+ * `readArtifact` returns a single version; the history panel needs the whole
+ * ordered chain, each version carrying its `why` / `author` / `resolved_action`
+ * metadata. Versions are immutable, so this is a pure read: ascending by seq, with
+ * the mutable head pointer returned alongside. Returns `null` for an unknown
+ * artifact so the panel can render an honest empty state.
+ */
+export const versionChain = query({
+  args: { artifact_id: v.string() },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ artifact: ArtifactSummary; head_seq: number; versions: ArtifactVersion[] } | null> => {
+    const doc = await getArtifactByKey(ctx, args.artifact_id);
+    if (!doc) return null;
+    const rows = await ctx.db
+      .query("versions")
+      .withIndex("by_artifact_seq", (q) => q.eq("artifact_id", args.artifact_id))
+      .collect();
+    const versions = rows.sort((a, b) => a.seq - b.seq).map(versionOf);
+    return { artifact: summaryOf(doc), head_seq: doc.head_seq, versions };
   },
 });
 
