@@ -145,20 +145,7 @@ http.route({
   }),
 });
 
-http.route({
-  pathPrefix: ARTIFACT_PREFIX,
-  method: "PATCH",
-  handler: authed(async (request) => {
-    const url = new URL(request.url);
-    const id = url.pathname.slice(ARTIFACT_PREFIX.length);
-    if (!id) return errorResponse({ code: "not_found", message: "artifact id required" });
-    const body = await parseBody(request, updateArtifactSchema);
-    if (!body.ok) return body.response;
-    // Delegation happens inside the wrapper below (needs ctx); see patchArtifact.
-    return patchArtifact(id, body.data);
-  }),
-});
-
+// PATCH needs the Convex request context, so it is implemented directly below.
 http.route({
   pathPrefix: ARTIFACT_PREFIX,
   method: "POST",
@@ -179,10 +166,7 @@ http.route({
   }),
 });
 
-// PATCH needs ctx; the `authed` wrapper hides it, so this closure is defined at
-// module scope and re-acquires ctx through a dedicated httpAction. To keep one
-// delegation point we instead inline ctx above — redefine PATCH without `authed`:
-http.routes = http.routes.filter((r) => !(r[0] === ARTIFACT_PREFIX && r[1] === "PATCH"));
+// PATCH /agent/artifacts/:id
 http.route({
   pathPrefix: ARTIFACT_PREFIX,
   method: "PATCH",
