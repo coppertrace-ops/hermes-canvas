@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@hermes/contract": "workspace:*",
+    "@hermes/diff": "workspace:*",
     "@hermes/env": "workspace:*",
     "@hermes/policy": "workspace:*",
     "@hermes/render": "workspace:*",

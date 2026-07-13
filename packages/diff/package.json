@@ -5,12 +5,13 @@
   "description": "Semantic diff engine (markdown structural+word, mermaid, board, html source). OWNED BY CHRONICLE — ATLAS-seeded boundary stub.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
   },
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
