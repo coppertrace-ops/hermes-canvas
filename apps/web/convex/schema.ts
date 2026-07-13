@@ -1,3 +1,4 @@
+import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -38,6 +39,13 @@ const resolvedAction = v.object({
 });
 
 export default defineSchema({
+  // Convex Auth tables (OWNER: ATLAS, plan §6). Convex derives one typed DataModel
+  // from a single `defineSchema`, so the auth tables must be spread in here rather
+  // than living in a separate fragment. Additive-only (plan §9); no LEDGER table
+  // below is altered. `authTables` provides `users`, `authSessions`,
+  // `authAccounts`, `authRefreshTokens`, `authVerificationCodes`, etc.
+  ...authTables,
+
   artifacts: defineTable({
     /** Stable public id (`art_N`) — the API/versions key; identity never changes. */
     art_key: v.string(),

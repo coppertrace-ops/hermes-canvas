@@ -15,6 +15,7 @@ import { httpRouter } from "convex/server";
 import type { z } from "zod";
 import { api, internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
+import { auth } from "./auth";
 import { verifyServiceToken } from "./lib/agentAuth";
 import type { WriteOutcome } from "./lib/outcome";
 
@@ -62,6 +63,11 @@ async function parseBody<T>(request: Request, schema: z.ZodType<T>): Promise<{ o
 }
 
 const http = httpRouter();
+
+// Convex Auth sign-in/sign-out/token HTTP endpoints (OWNER: ATLAS, plan §6).
+// Mounted here because Convex serves exactly one HTTP router; this is auth wiring
+// only and does not touch the `/agent/*` transport below.
+auth.addHttpRoutes(http);
 
 // --- GET /agent/updates ----------------------------------------------------
 http.route({
