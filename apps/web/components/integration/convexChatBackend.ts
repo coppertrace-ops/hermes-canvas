@@ -4,26 +4,23 @@
  * Live chat backend (OWNER: PROOF integration).
  *
  * A Convex-backed {@link ChatBackend} — the same seam COURIER's mock implements,
- * so `ChatProvider`/`ChatPane` render against it unchanged. It subscribes to the
- * public `canvas.getUpdates` live query for the message + event feed and posts
- * human turns through the new `human.sendMessage` mutation. It deliberately does
- * NOT fabricate an assistant reply: a send creates a pending human turn that the
- * real Hermes agent loop answers through its own write path; until it does, the
- * transcript honestly shows only the human message.
+ * so `ChatProvider`/`ChatPane` render against it unchanged.
+ *
+ * Chat history is iMessage-style:
+ *  - Live-subscribe to the most recent page (`listRecentMessages`).
+ *  - Open at the latest messages; scroll-up calls `listMessagesBefore`.
+ *  - Does NOT dump the entire event log into the transcript (that put users at
+ *    the top of hundreds of telemetry rows).
  *
  * Outgoing sends are optimistic: the human message appears immediately as
  * `sending`, and is reconciled away once the server feed delivers its committed
- * copy. A rejected/failed send surfaces as `error` with a retry affordance — a
- * blocked send is visible, never a silent drop.
- *
- * Attachments are not yet wired to the live upload path (COURIER `files.ts`), so
- * `upload` fails honestly rather than pretending to succeed.
+ * copy.
  */
 
-import type { FeedEvent, FeedMessage } from "@hermes/contract";
+import type { FeedMessage } from "@hermes/contract";
 import type { ConvexReactClient } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { buildTimeline, describeSystemEvent } from "../chat";
+import { buildTimeline } from "../chat";
 import type {
   ChatBackend,
   ChatItem,
@@ -31,10 +28,11 @@ import type {
   ChatSnapshot,
   ConnectionState,
   SendDraft,
-  SystemEvent,
   UploadFile,
   UploadHandle,
 } from "../chat";
+
+const PAGE_SIZE = 40;
 
 interface Optimistic {
   draft: SendDraft;
@@ -45,29 +43,48 @@ interface Optimistic {
   serverId?: string;
 }
 
+function toChatMessage(m: FeedMessage): ChatMessage {
+  return {
+    id: m.message_id,
+    role: m.role,
+    body: m.body,
+    status: m.status,
+    attachments: [],
+    at: m.at,
+  };
+}
+
+function mergeById(older: FeedMessage[], recent: FeedMessage[]): FeedMessage[] {
+  const map = new Map<string, FeedMessage>();
+  for (const m of older) map.set(m.message_id, m);
+  for (const m of recent) map.set(m.message_id, m);
+  return [...map.values()].sort((a, b) => {
+    if (a.at !== b.at) return a.at - b.at;
+    return a.message_id < b.message_id ? -1 : a.message_id > b.message_id ? 1 : 0;
+  });
+}
+
 export function createConvexChatBackend(client: ConvexReactClient): ChatBackend {
-  let server: { messages: FeedMessage[]; events: FeedEvent[] } = { messages: [], events: [] };
+  let recent: FeedMessage[] = [];
+  let older: FeedMessage[] = [];
+  let oldestEventSeq: number | null = null;
+  let hasMoreOlder = false;
+  let loadingOlder = false;
   let connection: ConnectionState = "connecting";
   const optimistic = new Map<string, Optimistic>();
   const listeners = new Set<(s: ChatSnapshot) => void>();
   let counter = 0;
+  let loadOlderInflight: Promise<boolean> | null = null;
 
   function reconcile() {
-    const ids = new Set(server.messages.map((m) => m.message_id));
+    const ids = new Set([...older, ...recent].map((m) => m.message_id));
     for (const [localId, o] of optimistic) {
       if (o.serverId && ids.has(o.serverId)) optimistic.delete(localId);
     }
   }
 
   function buildItems(): ChatItem[] {
-    const serverMsgs: ChatMessage[] = server.messages.map((m) => ({
-      id: m.message_id,
-      role: m.role,
-      body: m.body,
-      status: m.status,
-      attachments: [],
-      at: m.at,
-    }));
+    const serverMsgs = mergeById(older, recent).map(toChatMessage);
     const pending: ChatMessage[] = [...optimistic.entries()].map(([id, o]) => ({
       id,
       role: "human",
@@ -77,33 +94,78 @@ export function createConvexChatBackend(client: ConvexReactClient): ChatBackend 
       at: o.at,
       error: o.error,
     }));
-    const events: SystemEvent[] = server.events
-      .filter((e) => e.kind !== "message")
-      .map((e) => describeSystemEvent(e));
-    return buildTimeline([...serverMsgs, ...pending], events);
+    // Messages only — full system-event history was the "open at top of hundreds
+    // of rows" failure mode. Live artifact system lines can return later.
+    return buildTimeline([...serverMsgs, ...pending], []);
   }
 
   function snapshot(): ChatSnapshot {
-    return { connection, items: buildItems() };
+    return {
+      connection,
+      items: buildItems(),
+      hasMoreOlder,
+      loadingOlder,
+    };
   }
   function emit() {
     const s = snapshot();
     for (const l of listeners) l(s);
   }
 
-  // A single long-lived subscription to the feed. Reconnect handling is Convex's;
-  // we surface "live" once the first snapshot lands.
-  const watch = client.watchQuery(api.canvas.getUpdates, { cursor: 0 });
-  function applyResult() {
+  // Live tail: always the most recent PAGE_SIZE messages.
+  const watch = client.watchQuery(api.canvas.listRecentMessages, { limit: PAGE_SIZE });
+  function applyRecent() {
     const res = watch.localQueryResult();
     if (!res) return;
-    server = { messages: res.messages, events: res.events };
+    recent = res.messages;
+    // Only seed oldest/hasMore from the live page until the user has paged up.
+    if (older.length === 0) {
+      oldestEventSeq = res.oldest_event_seq;
+      hasMoreOlder = res.has_more;
+    }
     connection = "live";
     reconcile();
     emit();
   }
-  watch.onUpdate(() => applyResult());
-  applyResult();
+  watch.onUpdate(() => applyRecent());
+  applyRecent();
+
+  async function loadOlder(): Promise<boolean> {
+    if (loadingOlder || !hasMoreOlder || oldestEventSeq == null) return false;
+    if (loadOlderInflight) return loadOlderInflight;
+
+    loadingOlder = true;
+    emit();
+
+    loadOlderInflight = (async () => {
+      try {
+        const page = await client.query(api.canvas.listMessagesBefore, {
+          before_event_seq: oldestEventSeq!,
+          limit: PAGE_SIZE,
+        });
+        if (page.messages.length === 0) {
+          hasMoreOlder = false;
+          return false;
+        }
+        // Prepend older page (dedupe against what we already hold).
+        const known = new Set([...older, ...recent].map((m) => m.message_id));
+        const fresh = page.messages.filter((m) => !known.has(m.message_id));
+        older = [...fresh, ...older];
+        if (page.oldest_event_seq != null) oldestEventSeq = page.oldest_event_seq;
+        hasMoreOlder = page.has_more;
+        reconcile();
+        return fresh.length > 0;
+      } catch {
+        return false;
+      } finally {
+        loadingOlder = false;
+        loadOlderInflight = null;
+        emit();
+      }
+    })();
+
+    return loadOlderInflight;
+  }
 
   function dispatch(localId: string): Promise<void> {
     const o = optimistic.get(localId);
@@ -149,7 +211,7 @@ export function createConvexChatBackend(client: ConvexReactClient): ChatBackend 
   }
 
   function upload(file: UploadFile): UploadHandle {
-    void file; // uploads are not yet wired to the live path (COURIER files.ts).
+    void file;
     const id = `att_${(counter += 1)}`;
     return {
       id,
@@ -167,5 +229,6 @@ export function createConvexChatBackend(client: ConvexReactClient): ChatBackend 
     send,
     retry,
     upload,
+    loadOlder,
   };
 }

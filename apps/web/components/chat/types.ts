@@ -95,4 +95,8 @@ export type ConnectionState = "connecting" | "live" | "reconnecting" | "offline"
 export interface ChatSnapshot {
   items: ChatItem[];
   connection: ConnectionState;
+  /** Older history exists above the current window (scroll-up). */
+  hasMoreOlder?: boolean;
+  /** True while a scroll-up page load is in flight. */
+  loadingOlder?: boolean;
 }

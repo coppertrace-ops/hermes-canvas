@@ -158,6 +158,13 @@ export const getUpdates = query({
   },
 });
 
+/**
+ * Agent inbox: unacked human messages + events after cursor.
+ *
+ * Cursor alone is not enough — after a gateway restart the poller used to start
+ * at 0 and re-mirror every historical human turn. Delivery is durable via
+ * `messages.agent_delivered_at` (set by `ackHumanMessages`).
+ */
 export const pendingWork = query({
   args: { cursor: v.optional(v.number()) },
   handler: async (ctx, args): Promise<UpdatesResponse> => {
@@ -167,15 +174,139 @@ export const pendingWork = query({
       .withIndex("by_seq", (q) => q.gt("seq", cursor))
       .collect();
     const events: FeedEvent[] = eventDocs.map((e) => ({ seq: e.seq, kind: e.kind, actor: e.actor, refs: e.refs, at: e.at }));
-    const msgDocs = await ctx.db
-      .query("messages")
-      .withIndex("by_event_seq", (q) => q.gt("event_seq", cursor))
-      .collect();
-    // Hermes reacts to human messages only.
-    const messages: FeedMessage[] = msgDocs
-      .filter((m) => m.role === "human")
+    // Unacked human turns only (ignore cursor for messages — ack is the gate).
+    const humanDocs = await ctx.db.query("messages").withIndex("by_event_seq").order("asc").collect();
+    const messages: FeedMessage[] = humanDocs
+      .filter((m) => m.role === "human" && m.agent_delivered_at === undefined)
+      .slice(0, 50)
       .map((m) => ({ message_id: m._id, role: m.role, body: m.body, status: m.status, at: m.at }));
     return { cursor: await currentCursor(ctx), messages, events };
+  },
+});
+
+function feedMessageOf(m: Doc<"messages">): FeedMessage {
+  return { message_id: m._id, role: m.role, body: m.body, status: m.status, at: m.at };
+}
+
+/**
+ * Host-connector telemetry receipts were written into `messages` as agent rows.
+ * They are not chat turns — keep them out of the transcript so the pane opens on
+ * real conversation, not hundreds of tool-start lines.
+ */
+function isTranscriptMessage(m: Doc<"messages">): boolean {
+  if (m.role === "human") return true;
+  const body = m.body.trimStart();
+  // Host-connector receipt lines (emoji + labels) are telemetry, not chat.
+  if (/^(🔧|✅|❌|⏹|🧹|🛰️|🧠|📨|⚠️|🛠|👤|🟢|🔴|🟡)/u.test(body)) return false;
+  if (/^tool (start|ok|error)\b/i.test(body)) return false;
+  if (/^session (start|end|finalized|started)\b/i.test(body)) return false;
+  if (/^turn start\b/i.test(body)) return false;
+  if (/^Hermes Canvas connector/i.test(body)) return false;
+  // Keep intentional agent chat: free text / markdown without receipt prefixes.
+  return true;
+}
+
+export type ChatPage = {
+  messages: FeedMessage[];
+  /** True when another older page may exist. */
+  has_more: boolean;
+  /** Lowest event_seq in this page (use as `before_event_seq` for the next older page). */
+  oldest_event_seq: number | null;
+  /** Highest event_seq in this page. */
+  newest_event_seq: number | null;
+  /** Global event cursor high-water (for live tails). */
+  cursor: number;
+};
+
+/**
+ * Walk newest→oldest, keeping only transcript messages, until we fill `limit`
+ * or exhaust the table / hit `before_event_seq`.
+ */
+async function collectTranscriptPage(
+  ctx: QueryCtx,
+  opts: { limit: number; beforeEventSeq?: number },
+): Promise<{ rows: Doc<"messages">[]; has_more: boolean }> {
+  const out: Doc<"messages">[] = [];
+  let before = opts.beforeEventSeq;
+  // Scan more rows than the page size because telemetry is dense.
+  const SCAN = Math.min(opts.limit * 20, 400);
+  let scanned = 0;
+  let hitEnd = false;
+
+  while (out.length < opts.limit && !hitEnd) {
+    const beforeBound = before;
+    const batch = beforeBound !== undefined
+      ? await ctx.db
+          .query("messages")
+          .withIndex("by_event_seq", (q) => q.lt("event_seq", beforeBound))
+          .order("desc")
+          .take(SCAN)
+      : await ctx.db.query("messages").withIndex("by_event_seq").order("desc").take(SCAN);
+
+    if (batch.length === 0) {
+      hitEnd = true;
+      break;
+    }
+
+    for (const row of batch) {
+      scanned += 1;
+      if (isTranscriptMessage(row)) {
+        out.push(row);
+        if (out.length >= opts.limit) break;
+      }
+    }
+
+    before = batch[batch.length - 1]!.event_seq;
+    if (batch.length < SCAN) {
+      hitEnd = true;
+      break;
+    }
+    // Safety: don't spin forever on a giant table in one query.
+    if (scanned >= 2000) break;
+  }
+
+  // has_more if we filled the page (there may still be older transcript rows).
+  const has_more = out.length >= opts.limit && !hitEnd;
+  return { rows: out, has_more: has_more || (out.length >= opts.limit && scanned >= opts.limit) };
+}
+
+/**
+ * Most-recent chat page (iMessage-style). Live-query friendly: always the latest
+ * `limit` transcript messages, oldest→newest within the page.
+ */
+export const listRecentMessages = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<ChatPage> => {
+    const limit = Math.min(Math.max(args.limit ?? 40, 1), 100);
+    const { rows: newestFirst, has_more } = await collectTranscriptPage(ctx, { limit });
+    const chronological = newestFirst.slice().reverse();
+    return {
+      messages: chronological.map(feedMessageOf),
+      has_more,
+      oldest_event_seq: chronological[0]?.event_seq ?? null,
+      newest_event_seq: chronological[chronological.length - 1]?.event_seq ?? null,
+      cursor: await currentCursor(ctx),
+    };
+  },
+});
+
+/** Older page strictly before `before_event_seq` (scroll-up load more). */
+export const listMessagesBefore = query({
+  args: { before_event_seq: v.number(), limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<ChatPage> => {
+    const limit = Math.min(Math.max(args.limit ?? 40, 1), 100);
+    const { rows: newestFirst, has_more } = await collectTranscriptPage(ctx, {
+      limit,
+      beforeEventSeq: args.before_event_seq,
+    });
+    const chronological = newestFirst.slice().reverse();
+    return {
+      messages: chronological.map(feedMessageOf),
+      has_more,
+      oldest_event_seq: chronological[0]?.event_seq ?? null,
+      newest_event_seq: chronological[chronological.length - 1]?.event_seq ?? null,
+      cursor: await currentCursor(ctx),
+    };
   },
 });
 

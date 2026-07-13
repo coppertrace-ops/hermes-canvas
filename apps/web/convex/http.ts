@@ -85,6 +85,32 @@ http.route({
   }),
 });
 
+// --- POST /agent/updates/ack — durable human-message delivery ack ----------
+http.route({
+  path: "/agent/updates/ack",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!(await verifyServiceToken(request.headers.get("Authorization")))) {
+      return errorResponse({ code: "unauthorized", message: "missing or invalid service token" });
+    }
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return errorResponse({ code: "validation_failed", message: "body is not valid JSON" });
+    }
+    const message_ids =
+      raw && typeof raw === "object" && Array.isArray((raw as { message_ids?: unknown }).message_ids)
+        ? ((raw as { message_ids: unknown[] }).message_ids.filter((x) => typeof x === "string") as string[])
+        : null;
+    if (!message_ids) {
+      return errorResponse({ code: "validation_failed", message: "message_ids: required string array" });
+    }
+    const res = await ctx.runMutation(internal.human.ackHumanMessages, { message_ids });
+    return json(200, res);
+  }),
+});
+
 // --- GET /agent/artifacts (list) + POST /agent/artifacts (create) ---------
 http.route({
   path: "/agent/artifacts",

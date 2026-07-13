@@ -30,7 +30,7 @@ export interface ChatPaneProps {
 
 /** The inner pane; expects a `<ChatProvider>` ancestor. */
 export function ChatPane({ title = "Hermes", actions }: ChatPaneProps) {
-  const { snapshot, retry } = useChat();
+  const { snapshot, retry, loadOlder } = useChat();
   return (
     <Panel
       title={title}
@@ -39,7 +39,16 @@ export function ChatPane({ title = "Hermes", actions }: ChatPaneProps) {
       style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}
     >
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MessageList items={snapshot.items} connection={snapshot.connection} onRetry={retry} />
+        <MessageList
+          items={snapshot.items}
+          connection={snapshot.connection}
+          onRetry={retry}
+          hasMoreOlder={snapshot.hasMoreOlder}
+          loadingOlder={snapshot.loadingOlder}
+          onLoadOlder={() => {
+            void loadOlder();
+          }}
+        />
         <Composer />
       </div>
     </Panel>

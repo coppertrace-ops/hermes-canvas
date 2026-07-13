@@ -42,6 +42,8 @@ export interface UseChat {
   send(draft: SendDraft): Promise<void>;
   retry(messageId: string): Promise<void>;
   upload(file: UploadFile, callbacks?: UploadCallbacks): UploadHandle;
+  /** Request older history (scroll-up). No-op when the backend has no paging. */
+  loadOlder(): Promise<boolean>;
 }
 
 /**
@@ -70,6 +72,7 @@ export function useChat(): UseChat {
       send: (draft) => backendRef.current.send(draft),
       retry: (messageId) => backendRef.current.retry(messageId),
       upload: (file, callbacks) => backendRef.current.upload(file, callbacks),
+      loadOlder: () => backendRef.current.loadOlder?.() ?? Promise.resolve(false),
     }),
     [snapshot],
   );

@@ -116,6 +116,12 @@ export default defineSchema({
     stream_id: v.optional(v.string()),
     event_seq: v.number(),
     at: v.number(),
+    /**
+     * When set, the host poller has delivered this human message to Hermes.
+     * Prevents restart redelivery loops (in-memory seen-sets are not enough).
+     * Agent messages leave this undefined.
+     */
+    agent_delivered_at: v.optional(v.number()),
   })
     .index("by_event_seq", ["event_seq"])
     .index("by_stream", ["stream_id"]),

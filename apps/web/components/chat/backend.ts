@@ -60,4 +60,9 @@ export interface ChatBackend {
   retry(messageId: string): Promise<void>;
   /** Begin an attachment upload, reporting progress; enforces the size guard. */
   upload(file: UploadFile, callbacks?: UploadCallbacks): UploadHandle;
+  /**
+   * Load an older page of history (scroll-up). Returns true if any items were
+   * added. Optional — mock backends without history paging may omit it.
+   */
+  loadOlder?(): Promise<boolean>;
 }
