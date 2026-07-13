@@ -1,6 +1,7 @@
 import { aggregateTabChanged, isArtifactChanged, nextLastSeen } from "../../../packages/diff/src/changed";
 import type { HasHead } from "../../../packages/diff/src/changed";
 import { v } from "convex/values";
+import { requireOwner } from "./authGuard";
 import { mutation, query, type MutationCtx } from "./_generated/server";
 
 /**
@@ -17,6 +18,13 @@ import { mutation, query, type MutationCtx } from "./_generated/server";
  * action `canvas.restoreArtifact` (plan §6 enforces the owner identity across the
  * non-`/agent/*` surface); they never touch the append-only `versions`/`events`
  * tables, only the owner's private `last_seen` cursor.
+ *
+ * AUTH: `markSeen` is a browser-only mutation (not wired into `/agent/*`), so it
+ * `requireOwner`s at its top — an anonymous/non-owner caller cannot advance the
+ * owner's cursor. `getLastSeen` and `listArtifactChanges` are browser-only READ
+ * queries; per the scope of this owner-write pass they are left un-guarded (they
+ * expose only the single owner's own last-seen cursor and changed flags — no
+ * cross-tenant data exists in this single-owner deployment).
  */
 
 /**
@@ -28,6 +36,7 @@ import { mutation, query, type MutationCtx } from "./_generated/server";
 export const markSeen = mutation({
   args: { artifact_id: v.string(), seq: v.optional(v.number()) },
   handler: async (ctx: MutationCtx, args): Promise<{ artifact_id: string; seq: number }> => {
+    await requireOwner(ctx);
     const artifact = await ctx.db
       .query("artifacts")
       .withIndex("by_art_key", (q) => q.eq("art_key", args.artifact_id))

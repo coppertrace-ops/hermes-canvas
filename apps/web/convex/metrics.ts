@@ -1,6 +1,7 @@
 import { isValidMetricsEvent, summarizeReadership } from "../../../packages/diff/src/metrics";
 import type { MetricsEvent, ReadershipSummary } from "../../../packages/diff/src/metrics";
 import { v } from "convex/values";
+import { requireOwner } from "./authGuard";
 import { mutation, query } from "./_generated/server";
 
 /**
@@ -17,6 +18,12 @@ import { mutation, query } from "./_generated/server";
  * observation is never patched. The event vocabulary, validation, and the
  * summary aggregation all live in `@hermes/diff` (pure, tested); these are the
  * thin Convex I/O wrappers. Nothing here reads or writes artifact content.
+ *
+ * AUTH: `recordEvent` is a browser-only mutation (the reader UI instruments the
+ * owner's own engagement; it is not wired into `/agent/*`), so it `requireOwner`s
+ * at its top — an anonymous caller cannot inject readership events that would skew
+ * the kill/keep signal. `readershipSummary` and `listEvents` are browser-only READ
+ * queries left un-guarded within the scope of this owner-write pass.
  */
 
 const kindValidator = v.union(
@@ -44,6 +51,7 @@ export const recordEvent = mutation({
     resolution: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ recorded: boolean }> => {
+    await requireOwner(ctx);
     const now = Date.now();
     const event: MetricsEvent = {
       kind: args.kind,

@@ -13,14 +13,22 @@ import schema from "./schema";
  *  2. That message is VISIBLE as pending work — `canvas.pendingWork` surfaces the
  *     human turn (and only human turns) so the existing agent loop can consume it.
  *
+ * `sendMessage` is now owner-guarded (WARDEN authz pass), so these browser-path
+ * assertions run as the signed-in owner via `t.withIdentity`. The authorization
+ * boundary itself (anonymous rejects, owner succeeds, agent internal path stays
+ * open) is proven separately in `authz.test.ts`.
+ *
  * Runs the real Convex functions against an in-memory backend via `convex-test`.
  */
 
 const modules = import.meta.glob("./**/!(*.test).*s");
 
+/** The signed-in owner; Convex Auth's allowlist-of-one means any identity IS the owner. */
+const OWNER = { subject: "owner|1", issuer: "https://example.com", email: "owner@example.com" };
+
 describe("human.sendMessage", () => {
   it("persists a human message and a message event (no assistant reply)", async () => {
-    const t = convexTest(schema, modules);
+    const t = convexTest(schema, modules).withIdentity(OWNER);
 
     const res = await t.mutation(api.human.sendMessage, { text: "Please tidy the notes." });
     expect(res.ok).toBe(true);
@@ -45,7 +53,7 @@ describe("human.sendMessage", () => {
   });
 
   it("rejects an oversize message as recorded evidence, not a silent drop", async () => {
-    const t = convexTest(schema, modules);
+    const t = convexTest(schema, modules).withIdentity(OWNER);
     const huge = "x".repeat(200_000); // exceeds MESSAGE_BYTES
 
     const res = await t.mutation(api.human.sendMessage, { text: huge });
@@ -63,7 +71,7 @@ describe("human.sendMessage", () => {
 
 describe("pending work visibility", () => {
   it("surfaces the human turn (and only human turns) for the agent loop", async () => {
-    const t = convexTest(schema, modules);
+    const t = convexTest(schema, modules).withIdentity(OWNER);
 
     await t.mutation(api.human.sendMessage, { text: "Human asks a question." });
     // An agent reply lands through the agent-only internal path.

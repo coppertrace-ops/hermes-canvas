@@ -1,5 +1,6 @@
 import { byteLength, CanvasError, LIMITS } from "@hermes/contract";
 import { v } from "convex/values";
+import { requireOwner } from "./authGuard";
 import { mutation } from "./_generated/server";
 import { reject } from "./lib/outcome";
 import { appendEvent } from "./lib/store";
@@ -18,8 +19,13 @@ import { appendEvent } from "./lib/store";
  * It deliberately does NOT synthesize an assistant reply — a human send creates a
  * pending user turn, nothing more. Listing the resulting thread is the existing
  * public `canvas.getUpdates` live query; there is no second read path to keep in
- * sync. Auth follows the sibling human action `canvas.restoreArtifact` (plan §6
- * owner identity across the non-`/agent/*` surface); no fake gate is added here.
+ * sync.
+ *
+ * AUTH: this is a browser-only mutation (it is NOT wired into the `/agent/*` HTTP
+ * router — the agent posts through `internal.agentWrites.postMessage` instead), so
+ * it requires the signed-in owner. `requireOwner` enforces the plan §6 owner
+ * identity across the non-`/agent/*` surface; the demo bypass is honored only in
+ * non-production. A non-owner or anonymous caller is rejected before any write.
  */
 export const sendMessage = mutation({
   args: { text: v.string(), turn_id: v.optional(v.string()) },
@@ -30,6 +36,7 @@ export const sendMessage = mutation({
     | { ok: true; message_id: string }
     | { ok: false; error: ReturnType<typeof CanvasError.oversize>["error"] }
   > => {
+    await requireOwner(ctx);
     const now = Date.now();
 
     if (byteLength(args.text) > LIMITS.MESSAGE_BYTES) {
