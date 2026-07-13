@@ -5,5 +5,10 @@
 
 export { IntegrationApp } from "./IntegrationApp";
 export { useDemoCanvasAdapter } from "./useDemoCanvasAdapter";
+export { useConvexCanvasAdapter } from "./useConvexCanvasAdapter";
+export { useConvexHistoryAdapter } from "./useConvexHistoryAdapter";
+export { createConvexChatBackend } from "./convexChatBackend";
 export { buildDemoSeed, buildDemoChatItems } from "./demoSeed";
 export type { DemoSeed, DemoArtifact, DemoTab } from "./demoSeed";
+export { resolveWorkspaceMode, bannerFor } from "./workspaceMode";
+export type { WorkspaceMode, LiveDataProbe, BannerCopy } from "./workspaceMode";
