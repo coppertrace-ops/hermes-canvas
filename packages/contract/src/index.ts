@@ -1,20 +1,30 @@
 /**
- * @hermes/contract — Canvas API contract.
+ * @hermes/contract — Canvas API contract (OWNER: LEDGER, plan §2–§3).
  *
- * OWNERSHIP: LEDGER (see docs/fable-staged-implementation-plan.md §7). ATLAS created
- * this as a package boundary only; LEDGER implements the real schema, zod validators,
- * sequencer types, events, and tool-manifest source here in Phase 1.
- *
- * The stable exports below let other packages compile against a name today. Do not
- * add domain logic here from any agent other than LEDGER — file change requests to
- * the owner instead.
+ * Single source of truth for: zod request/response schemas, stored record shapes
+ * (mirrored by the Convex schema), the pure sequencer / region-edit / rate-limit /
+ * validation logic, the append-only in-memory reference core, and the Hermes tool
+ * manifest. After the G1 contract freeze, changes here are additive-only.
  */
 
 /** Bumped by LEDGER at the G1 contract freeze; after that, additive-only. */
-export const CONTRACT_VERSION = "0.0.0-pre-g1" as const;
+export const CONTRACT_VERSION = "1.0.0-g1" as const;
 
-/** Artifact type union (frozen shape target from the plan §3). Placeholder pending LEDGER. */
-export type ArtifactType = "markdown" | "mermaid" | "html-static" | "board";
-
-/** Author of a version. */
-export type Author = "human" | "agent";
+export * from "./limits";
+export * from "./errors";
+export * from "./artifact";
+export * from "./board";
+export * from "./edit";
+export * from "./events";
+export * from "./resolvedAction";
+export * from "./job";
+export * from "./tab";
+export * from "./api";
+export * from "./records";
+export * from "./region";
+export * from "./sequencer";
+export * from "./ratelimit";
+export * from "./validate";
+export * from "./plan";
+export * from "./core";
+export * from "./manifest";
