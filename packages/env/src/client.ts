@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { convexUrlSchema, originSchema } from "./shared.js";
+import { convexUrlSchema, originSchema } from "./shared";
 
 /**
  * Browser-exposed environment. Everything here ships to the client, so it must

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { clientEnvSchema } from "./client.js";
-import { nodeEnvSchema } from "./shared.js";
+import { clientEnvSchema } from "./client";
+import { nodeEnvSchema } from "./shared";
 
 /**
  * Next.js server-side environment (the `web` app). Includes the client vars plus

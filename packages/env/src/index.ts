@@ -1,7 +1,7 @@
-export * from "./shared.js";
-export * from "./client.js";
-export * from "./server.js";
-export * from "./convex.js";
+export * from "./shared";
+export * from "./client";
+export * from "./server";
+export * from "./convex";
 
 /**
  * Central, production-safe gate for the local/demo auth bypass.

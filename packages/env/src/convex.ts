@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emailSchema, nodeEnvSchema, originSchema, serviceTokenSchema } from "./shared.js";
+import { emailSchema, nodeEnvSchema, originSchema, serviceTokenSchema } from "./shared";
 
 /**
  * Environment consumed *inside Convex functions* at runtime. These are set as
