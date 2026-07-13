@@ -2,11 +2,15 @@
   "name": "@hermes/e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "End-to-end test suite. OWNED BY PROOF (security e2e -> WARDEN). ATLAS-seeded placeholder; no runner wired yet.",
+  "description": "End-to-end test suite. OWNED BY PROOF (security e2e -> WARDEN). Integration browser smoke driven by playwright-core against system Chrome.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:e2e": "node placeholder.mjs",
-    "clean": "rm -rf .turbo playwright-report test-results"
+    "test:browser": "node browser-smoke.mjs",
+    "clean": "rm -rf .turbo playwright-report test-results artifacts"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.61.1"
   }
 }

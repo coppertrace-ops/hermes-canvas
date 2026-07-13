@@ -1,0 +1,173 @@
+/*
+ * apps/web — global stylesheet (OWNER: PROOF integration).
+ *
+ * Imports the GLASS design system once, then adds *app-frame* concerns only:
+ * full-height layout and the integration-shell chrome (brand, the canvas/history
+ * view switch, the demo-data banner). Component look-and-feel comes from
+ * @hermes/ui tokens — nothing here restyles an owned component; it only lays out
+ * the surfaces those components render into.
+ */
+
+@import "@hermes/ui/styles.css";
+
+/* --- App frame ----------------------------------------------------------- */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* The AppShell is 100dvh; keep the document from introducing its own scroll. */
+  overflow: hidden;
+}
+
+/* The Next.js App Router mounts the tree directly under <body>; give the shell a
+   full-height flow root so the two-pane layout can size against the viewport. */
+#__hc-root {
+  height: 100dvh;
+  min-height: 0;
+}
+
+/* --- Integration chrome -------------------------------------------------- */
+
+.hc-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--hc-space-2);
+  font-weight: var(--hc-font-weight-semibold, 600);
+  letter-spacing: var(--hc-tracking-tight, -0.01em);
+  color: var(--hc-text);
+  white-space: nowrap;
+}
+.hc-brand__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--hc-radius-md, 8px);
+  background: var(--hc-accent);
+  color: var(--hc-accent-contrast, #fff);
+  font-size: 13px;
+  font-weight: 700;
+}
+.hc-brand__sub {
+  color: var(--hc-text-tertiary);
+  font-weight: var(--hc-font-weight-normal, 400);
+  font-size: var(--hc-font-size-sm);
+}
+
+/* Header layout: brand on the left, the view switch centered-ish, controls right. */
+.hc-header {
+  display: flex;
+  align-items: center;
+  gap: var(--hc-space-3);
+  width: 100%;
+  min-width: 0;
+}
+.hc-header__spacer {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.hc-header__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--hc-space-2);
+}
+
+/* Segmented view switch (Canvas / History). Built from tokens; keyboard-focusable. */
+.hc-viewswitch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--hc-surface-2);
+  border: var(--hc-border-width) solid var(--hc-border);
+  border-radius: var(--hc-radius-lg, 10px);
+}
+.hc-viewswitch__btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-secondary);
+  font-size: var(--hc-font-size-sm);
+  font-weight: var(--hc-font-weight-medium, 500);
+  padding: 5px 12px;
+  border-radius: var(--hc-radius-md, 8px);
+  cursor: pointer;
+  transition:
+    background-color var(--hc-duration-fast, 150ms) var(--hc-ease-out, ease-out),
+    color var(--hc-duration-fast, 150ms) var(--hc-ease-out, ease-out);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hc-viewswitch__btn:hover {
+  color: var(--hc-text);
+}
+.hc-viewswitch__btn[aria-pressed="true"] {
+  background: var(--hc-surface);
+  color: var(--hc-text);
+  box-shadow: var(--hc-shadow-sm, 0 1px 2px rgb(0 0 0 / 0.08));
+}
+
+/* Demo-data banner — an honest, dismissible strip. Never styled to look like a
+   live/success state; it announces that the content is illustrative. */
+.hc-databanner {
+  display: flex;
+  align-items: center;
+  gap: var(--hc-space-2);
+  padding: 6px var(--hc-space-4);
+  font-size: var(--hc-font-size-sm);
+  color: var(--hc-text-secondary);
+  background: var(--hc-warning-subtle, var(--hc-surface-2));
+  border-bottom: var(--hc-border-width) solid var(--hc-border);
+}
+.hc-databanner__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--hc-radius-full, 999px);
+  background: var(--hc-warning, #b8860b);
+}
+.hc-databanner--live .hc-databanner__dot {
+  background: var(--hc-success, #16a34a);
+}
+.hc-databanner strong {
+  color: var(--hc-text);
+  font-weight: var(--hc-font-weight-semibold, 600);
+}
+.hc-databanner__spacer {
+  flex: 1 1 0%;
+}
+
+/* The workspace region under the (optional) banner: fills the shell main. */
+.hc-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.hc-workspace__body {
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
+/* Split panes fill their slot; each pane scrolls internally. */
+.hc-workspace__split {
+  height: 100%;
+  min-height: 0;
+}
+.hc-pane-fill {
+  height: 100%;
+  min-height: 0;
+  padding: var(--hc-space-3);
+}
+
+/* History occupies the whole secondary pane with comfortable padding. */
+.hc-history-region {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--hc-space-4);
+}
