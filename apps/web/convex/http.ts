@@ -61,16 +61,6 @@ async function parseBody<T>(request: Request, schema: z.ZodType<T>): Promise<{ o
   return { ok: true, data: parsed.data };
 }
 
-/** Guard: run `fn` only if the request carries a valid service token. */
-function authed(fn: (request: Request) => Promise<Response>) {
-  return httpAction(async (_ctx, request) => {
-    if (!(await verifyServiceToken(request.headers.get("Authorization")))) {
-      return errorResponse({ code: "unauthorized", message: "missing or invalid service token" });
-    }
-    return fn(request);
-  });
-}
-
 const http = httpRouter();
 
 // --- GET /agent/updates ----------------------------------------------------
