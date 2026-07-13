@@ -9,6 +9,9 @@
  */
 
 import type * as agentWrites from "../agentWrites.js";
+import type * as auth from "../auth.js";
+import type * as authGuard from "../authGuard.js";
+import type * as authPolicy from "../authPolicy.js";
 import type * as canvas from "../canvas.js";
 import type * as files from "../files.js";
 import type * as http from "../http.js";
@@ -27,6 +30,9 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agentWrites: typeof agentWrites;
+  auth: typeof auth;
+  authGuard: typeof authGuard;
+  authPolicy: typeof authPolicy;
   canvas: typeof canvas;
   files: typeof files;
   http: typeof http;

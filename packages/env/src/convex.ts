@@ -15,6 +15,14 @@ export const convexEnvSchema = z.object({
    * and compared constant-time by LEDGER's HTTP actions. Shape-checked here only.
    */
   HERMES_SERVICE_TOKEN: serviceTokenSchema.optional(),
+  /**
+   * One-time bootstrap secret that authorizes the FIRST (and only) owner account
+   * creation via the Password sign-up flow (closed-owner, plan §6). Set it in the
+   * Convex deployment env before running the bootstrap, then UNSET it — with it
+   * gone, sign-up is permanently refused and the account cannot be re-created or
+   * hijacked. Shape-checked only; the value never lives in the repo.
+   */
+  OWNER_BOOTSTRAP_SECRET: serviceTokenSchema.optional(),
   /** Public site URL of the Convex HTTP actions host (…convex.site). Set by CLI. */
   SITE_URL: z.string().url().optional(),
   /** App origin allowed to talk to Convex Auth / postMessage into the sandbox. */

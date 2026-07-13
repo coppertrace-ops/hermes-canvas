@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Client providers (OWNER: PROOF integration).
+ * Client providers (OWNER: PROOF integration; auth provider by ATLAS, plan §6).
  *
  * Wires the Convex realtime client when `NEXT_PUBLIC_CONVEX_URL` is configured so
  * live queries/mutations are available to the integration surfaces. When it is
@@ -9,9 +9,15 @@
  * integration shell degrades to the clearly-labeled local demo seed rather than
  * crashing. `useHasConvex()` lets a surface decide whether it may call Convex
  * hooks at all (calling `useQuery` with no provider throws).
+ *
+ * When Convex IS configured, the client is mounted through
+ * `ConvexAuthNextjsProvider` (rather than a bare `ConvexProvider`) so live
+ * queries/mutations carry the owner's Convex Auth session and `useAuthActions`
+ * works. The demo (no-Convex) path is unchanged and auth-free.
  */
 
-import { ConvexProvider, ConvexReactClient } from "convex/react";
+import { ConvexAuthNextjsProvider } from "@convex-dev/auth/nextjs";
+import { ConvexReactClient } from "convex/react";
 import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
 
@@ -43,7 +49,7 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <HasConvexContext.Provider value={true}>
-      <ConvexProvider client={client}>{children}</ConvexProvider>
+      <ConvexAuthNextjsProvider client={client}>{children}</ConvexAuthNextjsProvider>
     </HasConvexContext.Provider>
   );
 }
