@@ -140,4 +140,39 @@ export default defineSchema({
   })
     .index("by_job", ["job_key"])
     .index("by_job_run", ["job_key", "run_id"]),
+
+  // -------------------------------------------------------------------------
+  // CHRONICLE (plan §3 changed-since-last-looked; §8 G4 readership test).
+  // Additive-only tables (plan §9), owned by CHRONICLE and consumed only by
+  // `lastSeen.ts` / `metrics.ts`. Kept here because Convex derives its single
+  // typed DataModel from this file; no LEDGER definition above is touched.
+  // -------------------------------------------------------------------------
+
+  /** One row per artifact (single owner): the head seq the owner last saw. */
+  last_seen: defineTable({
+    artifact_id: v.string(), // == artifacts.art_key
+    seq: v.number(),
+    at: v.number(),
+  }).index("by_artifact", ["artifact_id"]),
+
+  /** Readership-test instrumentation events (append-only; never patched). */
+  metrics: defineTable({
+    kind: v.union(
+      v.literal("diff_opened"),
+      v.literal("badge_clicked"),
+      v.literal("restore_performed"),
+      v.literal("artifact_first_viewed"),
+      v.literal("merge_prompt_opened"),
+      v.literal("merge_resolved"),
+    ),
+    artifact_id: v.optional(v.string()),
+    tab_id: v.optional(v.string()),
+    seq: v.optional(v.number()),
+    from_seq: v.optional(v.number()),
+    time_to_first_view_ms: v.optional(v.number()),
+    resolution: v.optional(v.string()),
+    at: v.number(),
+  })
+    .index("by_kind", ["kind"])
+    .index("by_at", ["at"]),
 });

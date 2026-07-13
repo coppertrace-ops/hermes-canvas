@@ -63,6 +63,9 @@ importers:
       '@hermes/contract':
         specifier: workspace:*
         version: link:../../packages/contract
+      '@hermes/diff':
+        specifier: workspace:*
+        version: link:../../packages/diff
       '@hermes/env':
         specifier: workspace:*
         version: link:../../packages/env
