@@ -1,5 +1,5 @@
-import { isValidMetricsEvent, summarizeReadership } from "@hermes/diff";
-import type { MetricsEvent, ReadershipSummary } from "@hermes/diff";
+import { isValidMetricsEvent, summarizeReadership } from "../../../packages/diff/src/metrics";
+import type { MetricsEvent, ReadershipSummary } from "../../../packages/diff/src/metrics";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 

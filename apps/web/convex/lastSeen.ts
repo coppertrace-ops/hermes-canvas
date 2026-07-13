@@ -1,5 +1,5 @@
-import { aggregateTabChanged, isArtifactChanged, nextLastSeen } from "@hermes/diff";
-import type { HasHead } from "@hermes/diff";
+import { aggregateTabChanged, isArtifactChanged, nextLastSeen } from "../../../packages/diff/src/changed";
+import type { HasHead } from "../../../packages/diff/src/changed";
 import { v } from "convex/values";
 import { mutation, query, type MutationCtx } from "./_generated/server";
 

@@ -10,10 +10,13 @@
 
 import type * as agentWrites from "../agentWrites.js";
 import type * as canvas from "../canvas.js";
+import type * as files from "../files.js";
 import type * as http from "../http.js";
+import type * as lastSeen from "../lastSeen.js";
 import type * as lib_agentAuth from "../lib/agentAuth.js";
 import type * as lib_outcome from "../lib/outcome.js";
 import type * as lib_store from "../lib/store.js";
+import type * as metrics from "../metrics.js";
 
 import type {
   ApiFromModules,
@@ -24,10 +27,13 @@ import type {
 declare const fullApi: ApiFromModules<{
   agentWrites: typeof agentWrites;
   canvas: typeof canvas;
+  files: typeof files;
   http: typeof http;
+  lastSeen: typeof lastSeen;
   "lib/agentAuth": typeof lib_agentAuth;
   "lib/outcome": typeof lib_outcome;
   "lib/store": typeof lib_store;
+  metrics: typeof metrics;
 }>;
 
 /**
