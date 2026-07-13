@@ -5,7 +5,7 @@ import { cx } from "../util";
 export type PanelVariant = "default" | "sunken" | "ghost";
 export type PanelPadding = "none" | "sm" | "md" | "lg";
 
-export interface PanelProps extends HTMLAttributes<HTMLDivElement> {
+export interface PanelProps extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {
   variant?: PanelVariant;
   /** Body padding. Use "none" when the body owns its own scroll/layout. */
   padding?: PanelPadding;
