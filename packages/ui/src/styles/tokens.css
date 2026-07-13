@@ -1,0 +1,274 @@
+/*
+ * @hermes/ui — design tokens (GLASS, plan §7)
+ *
+ * The single source of truth for color, type, space, radius, shadow, and motion.
+ * Everything downstream (components, apps/web globals) reads these variables; no
+ * hard-coded hex or px lives in a component rule.
+ *
+ * Theming model — dark & light are first-class, never a retrofit:
+ *   :root                                   → light tokens (default)
+ *   @media (prefers-color-scheme: dark)     → dark tokens when the OS asks and the
+ *     :root:not([data-theme="light"])         owner has not pinned light (system default)
+ *   [data-theme="dark"] / [data-theme="light"] → explicit, persisted owner choice wins
+ *
+ * The persisted preference is written to documentElement.dataset.theme by the
+ * no-flash init script (see apps/web layout + @hermes/ui ThemeToggle). Absence of
+ * the attribute means "follow the system", so live OS changes are honored.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Type ------------------------------------------------------------ */
+  --hc-font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --hc-font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --hc-font-size-xs: 0.6875rem; /* 11 */
+  --hc-font-size-sm: 0.8125rem; /* 13 */
+  --hc-font-size-base: 0.9375rem; /* 15 */
+  --hc-font-size-md: 1.0625rem; /* 17 */
+  --hc-font-size-lg: 1.25rem; /* 20 */
+  --hc-font-size-xl: 1.5rem; /* 24 */
+  --hc-font-size-2xl: 1.9375rem; /* 31 */
+  --hc-font-size-3xl: 2.5rem; /* 40 */
+
+  --hc-line-tight: 1.2;
+  --hc-line-snug: 1.35;
+  --hc-line-normal: 1.5;
+  --hc-line-relaxed: 1.65;
+
+  --hc-weight-regular: 400;
+  --hc-weight-medium: 500;
+  --hc-weight-semibold: 600;
+  --hc-weight-bold: 700;
+
+  --hc-tracking-tight: -0.014em;
+  --hc-tracking-normal: 0;
+  --hc-tracking-wide: 0.02em;
+
+  /* ---- Space (8-pt rhythm; 4 & 2 are the half / quarter steps) --------- */
+  --hc-space-0: 0;
+  --hc-space-1: 0.25rem; /* 4  */
+  --hc-space-2: 0.5rem; /* 8  */
+  --hc-space-3: 0.75rem; /* 12 */
+  --hc-space-4: 1rem; /* 16 */
+  --hc-space-5: 1.25rem; /* 20 */
+  --hc-space-6: 1.5rem; /* 24 */
+  --hc-space-8: 2rem; /* 32 */
+  --hc-space-10: 2.5rem; /* 40 */
+  --hc-space-12: 3rem; /* 48 */
+  --hc-space-16: 4rem; /* 64 */
+
+  /* ---- Radius ---------------------------------------------------------- */
+  --hc-radius-xs: 4px;
+  --hc-radius-sm: 6px;
+  --hc-radius-md: 8px;
+  --hc-radius-lg: 12px;
+  --hc-radius-xl: 16px;
+  --hc-radius-full: 9999px;
+
+  /* ---- Borders (hairline) ---------------------------------------------- */
+  --hc-border-width: 1px;
+
+  /* ---- Motion (150–200 ms ease-out house style) ------------------------ */
+  --hc-duration-1: 120ms;
+  --hc-duration-2: 160ms;
+  --hc-duration-3: 220ms;
+  --hc-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --hc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --hc-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* ---- Elevation (z) --------------------------------------------------- */
+  --hc-z-base: 0;
+  --hc-z-raised: 10;
+  --hc-z-sticky: 100;
+  --hc-z-overlay: 1000;
+  --hc-z-modal: 1100;
+  --hc-z-toast: 1200;
+
+  /* ---- Focus ----------------------------------------------------------- */
+  --hc-focus-ring-width: 2px;
+  --hc-focus-ring-offset: 2px;
+  --hc-focus-ring-color: var(--hc-accent);
+
+  /* ---- Color — light --------------------------------------------------- */
+  --hc-bg: #f5f5f7;
+  --hc-surface: #ffffff;
+  --hc-surface-2: #fafafa;
+  --hc-surface-sunken: #eeeef0;
+  --hc-surface-hover: rgba(0, 0, 0, 0.04);
+  --hc-surface-active: rgba(0, 0, 0, 0.07);
+  --hc-overlay: rgba(0, 0, 0, 0.4);
+
+  --hc-text: #1d1d1f;
+  --hc-text-secondary: #6e6e73;
+  --hc-text-tertiary: #8e8e93;
+  --hc-text-inverted: #ffffff;
+
+  --hc-border: rgba(0, 0, 0, 0.1);
+  --hc-border-strong: rgba(0, 0, 0, 0.16);
+
+  --hc-accent: #0071e3;
+  --hc-accent-hover: #0077ed;
+  --hc-accent-active: #006edb;
+  --hc-accent-subtle: rgba(0, 113, 227, 0.1);
+  --hc-accent-contrast: #ffffff;
+
+  /* status: `-solid` = the dot/fill, base = accessible text on subtle bg */
+  --hc-success: #248a3d;
+  --hc-success-solid: #34c759;
+  --hc-success-subtle: rgba(52, 199, 89, 0.15);
+  --hc-warning: #a2500a;
+  --hc-warning-solid: #ff9f0a;
+  --hc-warning-subtle: rgba(255, 159, 10, 0.16);
+  --hc-danger: #d70015;
+  --hc-danger-solid: #ff3b30;
+  --hc-danger-subtle: rgba(255, 59, 48, 0.12);
+  --hc-info: #0071e3;
+  --hc-info-solid: #0a84ff;
+  --hc-info-subtle: rgba(10, 132, 255, 0.12);
+
+  /* ---- Shadow — light -------------------------------------------------- */
+  --hc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --hc-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --hc-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Dark tokens — shared block reused by system-dark and explicit-dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --hc-bg: #1c1c1e;
+    --hc-surface: #2c2c2e;
+    --hc-surface-2: #242426;
+    --hc-surface-sunken: #161618;
+    --hc-surface-hover: rgba(255, 255, 255, 0.06);
+    --hc-surface-active: rgba(255, 255, 255, 0.1);
+    --hc-overlay: rgba(0, 0, 0, 0.6);
+
+    --hc-text: #f5f5f7;
+    --hc-text-secondary: #aeaeb2;
+    --hc-text-tertiary: #8e8e93;
+    --hc-text-inverted: #1d1d1f;
+
+    --hc-border: rgba(255, 255, 255, 0.12);
+    --hc-border-strong: rgba(255, 255, 255, 0.2);
+
+    --hc-accent: #0a84ff;
+    --hc-accent-hover: #409cff;
+    --hc-accent-active: #0a84ff;
+    --hc-accent-subtle: rgba(10, 132, 255, 0.18);
+    --hc-accent-contrast: #ffffff;
+
+    --hc-success: #30d158;
+    --hc-success-solid: #30d158;
+    --hc-success-subtle: rgba(48, 209, 88, 0.18);
+    --hc-warning: #ffb340;
+    --hc-warning-solid: #ff9f0a;
+    --hc-warning-subtle: rgba(255, 159, 10, 0.2);
+    --hc-danger: #ff453a;
+    --hc-danger-solid: #ff453a;
+    --hc-danger-subtle: rgba(255, 69, 58, 0.2);
+    --hc-info: #64d2ff;
+    --hc-info-solid: #0a84ff;
+    --hc-info-subtle: rgba(10, 132, 255, 0.22);
+
+    --hc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --hc-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+    --hc-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* Explicit owner choice — pinned dark wins regardless of OS. Values mirror the
+   system-dark block; kept as a discrete selector so the toggle is deterministic. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --hc-bg: #1c1c1e;
+  --hc-surface: #2c2c2e;
+  --hc-surface-2: #242426;
+  --hc-surface-sunken: #161618;
+  --hc-surface-hover: rgba(255, 255, 255, 0.06);
+  --hc-surface-active: rgba(255, 255, 255, 0.1);
+  --hc-overlay: rgba(0, 0, 0, 0.6);
+
+  --hc-text: #f5f5f7;
+  --hc-text-secondary: #aeaeb2;
+  --hc-text-tertiary: #8e8e93;
+  --hc-text-inverted: #1d1d1f;
+
+  --hc-border: rgba(255, 255, 255, 0.12);
+  --hc-border-strong: rgba(255, 255, 255, 0.2);
+
+  --hc-accent: #0a84ff;
+  --hc-accent-hover: #409cff;
+  --hc-accent-active: #0a84ff;
+  --hc-accent-subtle: rgba(10, 132, 255, 0.18);
+  --hc-accent-contrast: #ffffff;
+
+  --hc-success: #30d158;
+  --hc-success-solid: #30d158;
+  --hc-success-subtle: rgba(48, 209, 88, 0.18);
+  --hc-warning: #ffb340;
+  --hc-warning-solid: #ff9f0a;
+  --hc-warning-subtle: rgba(255, 159, 10, 0.2);
+  --hc-danger: #ff453a;
+  --hc-danger-solid: #ff453a;
+  --hc-danger-subtle: rgba(255, 69, 58, 0.2);
+  --hc-info: #64d2ff;
+  --hc-info-solid: #0a84ff;
+  --hc-info-subtle: rgba(10, 132, 255, 0.22);
+
+  --hc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --hc-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --hc-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* Explicit light — restores light tokens even under a dark OS. */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --hc-bg: #f5f5f7;
+  --hc-surface: #ffffff;
+  --hc-surface-2: #fafafa;
+  --hc-surface-sunken: #eeeef0;
+  --hc-surface-hover: rgba(0, 0, 0, 0.04);
+  --hc-surface-active: rgba(0, 0, 0, 0.07);
+  --hc-overlay: rgba(0, 0, 0, 0.4);
+
+  --hc-text: #1d1d1f;
+  --hc-text-secondary: #6e6e73;
+  --hc-text-tertiary: #8e8e93;
+  --hc-text-inverted: #ffffff;
+
+  --hc-border: rgba(0, 0, 0, 0.1);
+  --hc-border-strong: rgba(0, 0, 0, 0.16);
+
+  --hc-accent: #0071e3;
+  --hc-accent-hover: #0077ed;
+  --hc-accent-active: #006edb;
+  --hc-accent-subtle: rgba(0, 113, 227, 0.1);
+  --hc-accent-contrast: #ffffff;
+
+  --hc-success: #248a3d;
+  --hc-success-solid: #34c759;
+  --hc-success-subtle: rgba(52, 199, 89, 0.15);
+  --hc-warning: #a2500a;
+  --hc-warning-solid: #ff9f0a;
+  --hc-warning-subtle: rgba(255, 159, 10, 0.16);
+  --hc-danger: #d70015;
+  --hc-danger-solid: #ff3b30;
+  --hc-danger-subtle: rgba(255, 59, 48, 0.12);
+  --hc-info: #0071e3;
+  --hc-info-solid: #0a84ff;
+  --hc-info-subtle: rgba(10, 132, 255, 0.12);
+
+  --hc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --hc-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --hc-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+}

@@ -1,0 +1,116 @@
+/*
+ * @hermes/ui — base element styles (GLASS, plan §7)
+ *
+ * A minimal, opinionated reset expressed entirely in tokens. Reusable by any
+ * consumer that imports @hermes/ui/styles.css. App-frame concerns (full-height
+ * layout) live in apps/web/app/globals.css, not here.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  tab-size: 4;
+}
+
+body {
+  background-color: var(--hc-bg);
+  color: var(--hc-text);
+  font-family: var(--hc-font-sans);
+  font-size: var(--hc-font-size-base);
+  line-height: var(--hc-line-normal);
+  letter-spacing: var(--hc-tracking-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Media defaults */
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* Inherit type in form controls */
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* Sensible default link */
+a {
+  color: var(--hc-accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* Accessible focus, everywhere, for keyboard users only. Components override
+   with their own ring; this is the safety-floor default. */
+:focus-visible {
+  outline: var(--hc-focus-ring-width) solid var(--hc-focus-ring-color);
+  outline-offset: var(--hc-focus-ring-offset);
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+::selection {
+  background-color: var(--hc-accent-subtle);
+  color: var(--hc-text);
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--hc-font-mono);
+  font-size: 0.9em;
+}
+
+/* Restrained, theme-aware scrollbars (WebKit / Blink). */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--hc-border-strong);
+  border-radius: var(--hc-radius-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--hc-text-tertiary);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Honor reduced-motion: no product function depends on animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
