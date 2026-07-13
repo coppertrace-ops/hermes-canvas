@@ -1,0 +1,12 @@
+/*
+ * @hermes/ui — stylesheet entrypoint.
+ *
+ * Consumers import this once (e.g. apps/web/app/layout.tsx):
+ *   import "@hermes/ui/styles.css";
+ *
+ * Order matters: tokens define the variables, base consumes them for element
+ * defaults, components consume them for class rules.
+ */
+@import "./styles/tokens.css";
+@import "./styles/base.css";
+@import "./styles/components.css";

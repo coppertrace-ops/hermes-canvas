@@ -1,16 +1,32 @@
 {
   "name": "@hermes/ui",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "Shared UI primitives (design system, canvas panes chrome). OWNED BY GLASS — ATLAS-seeded boundary stub.",
+  "description": "Hermes Canvas design system — tokens, theming, and component primitives. OWNED BY GLASS (plan §7).",
   "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./tokens": "./src/tokens.ts",
+    "./theme": "./src/theme.ts"
   },
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist .turbo"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
   }
 }
