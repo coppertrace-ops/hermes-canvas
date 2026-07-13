@@ -1,0 +1,27 @@
+{
+  "name": "@hermes/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hermes Canvas authenticated web app (Next.js App Router). ATLAS scaffold; feature areas owned per plan §7.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf .next .turbo out"
+  },
+  "dependencies": {
+    "@hermes/env": "workspace:*",
+    "next": "15.1.6",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3"
+  }
+}
