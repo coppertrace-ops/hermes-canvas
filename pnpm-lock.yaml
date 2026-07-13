@@ -66,6 +66,12 @@ importers:
       '@hermes/env':
         specifier: workspace:*
         version: link:../../packages/env
+      '@hermes/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
+      '@hermes/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       convex:
         specifier: ^1.17.4
         version: 1.42.1(react@19.0.0)
