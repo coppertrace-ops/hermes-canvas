@@ -111,7 +111,9 @@ async function main() {
 
   // --- 4. Resizable divider + persistence -------------------------------------
   console.log("\n[4] Resizable divider");
-  const sep = page.locator('[role="separator"]').first();
+  // The resize divider is the separator carrying aria-valuenow; disambiguate
+  // from chat DayDivider elements that also use role="separator".
+  const sep = page.locator('[role="separator"][aria-valuenow]').first();
   check("divider present", (await sep.count()) > 0);
   const valNow = () => sep.getAttribute("aria-valuenow");
   const v0 = await valNow();

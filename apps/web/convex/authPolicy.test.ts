@@ -90,7 +90,7 @@ describe("assertBootstrapAllowed — no public sign-up", () => {
   });
 
   it("refuses sign-up with a missing or wrong secret", () => {
-    const env = { ...prodEnv, OWNER_BOOTSTRAP_SECRET: "the-one-time-secret-value-1234567890abcd" };
+    const env = { ...prodEnv, OWNER_BOOTSTRAP_SECRET: "the-one-time-secret-value-1234567890abcd" }; // check-secrets-allow: fabricated test fixture, not a real secret
     expect(() => assertBootstrapAllowed({ flow: "signUp" }, env)).toThrow(ConvexError);
     expect(() => assertBootstrapAllowed({ flow: "signUp", secret: "wrong" }, env)).toThrow(
       ConvexError,

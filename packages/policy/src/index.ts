@@ -1,21 +1,25 @@
 /**
- * @hermes/policy — security policy constants and helpers.
+ * @hermes/policy — security policy constants and helpers (OWNER: WARDEN).
  *
- * OWNERSHIP: WARDEN (plan §4, §7). ATLAS created this boundary only. WARDEN owns
- * the real CSP strings, the Markdown sanitizer config, the attachment header policy
- * (Content-Disposition: attachment + nosniff), and the size/rate limits. Consumers
- * (COURIER files serving, PANES renderers, ATLAS app CSP) import from here verbatim
- * rather than re-deriving policy — one source, no drift.
+ * The single source of truth for the Wave 2 security posture: the two CSP strings
+ * (content-origin egress kill + app-origin hardening), the iframe sandbox
+ * attribute, the sandbox frame postMessage protocol (schemas + both-ends identity
+ * verifiers), the attachment header policy, the Markdown/Mermaid sanitizer config,
+ * and the size/rate/grace limits. Consumers (`apps/content` shell, PANES host tile,
+ * ATLAS `next.config.mjs`, COURIER `files.ts`, PANES `@hermes/render`) import from
+ * here verbatim — one source, no drift, so the header/verifier a test asserts is
+ * byte-identical to the one shipped.
  */
-
-export const POLICY_VERSION = "0.0.0-pre-g2" as const;
 
 /**
- * Size/rate limit targets from the plan §2.2. Placeholder values pending WARDEN's
- * authoritative definitions; do not treat as final until WARDEN signs off (G2).
+ * Bumped from the pre-G2 stub to the real WARDEN implementation. G5 signs off the
+ * security suite against this version.
  */
-export const LIMITS = {
-  maxVersionBytes: 256 * 1024,
-  maxAttachmentBytes: 10 * 1024 * 1024,
-  maxMessageBytes: 32 * 1024,
-} as const;
+export const POLICY_VERSION = "1.0.0-g5" as const;
+
+export * from "./limits";
+export * from "./csp";
+export * from "./sandbox";
+export * from "./frameProtocol";
+export * from "./attachments";
+export * from "./sanitizer";

@@ -48,6 +48,11 @@ function summarize(kind: EventKind, actor: EventActor, refs: EventRefs): string 
       return `${who}'s write was rejected by a limit`;
     case "auth":
       return `${who} authenticated`;
+    case "flag_changed": {
+      // Audit line for an owner flag flip; refs carry the key + new state.
+      const state = refs.enabled ? "enabled" : "disabled";
+      return `${who} ${state} flag${refs.flag_key ? ` ${refs.flag_key}` : ""}`;
+    }
     case "message":
       // Messages render as bubbles, not system lines; a bare label is the fallback.
       return `${who} sent a message`;

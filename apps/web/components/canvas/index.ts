@@ -12,4 +12,26 @@ export { TabBar } from "./TabBar";
 export type { TabBarProps } from "./TabBar";
 
 export { ArtifactPane } from "./ArtifactPane";
-export type { ArtifactPaneProps } from "./ArtifactPane";
+export type { ArtifactPaneProps, EditBoardFn } from "./ArtifactPane";
+
+export { HtmlArtifactHost } from "./HtmlArtifactHost";
+export type { HtmlArtifactHostProps } from "./HtmlArtifactHost";
+
+export { HtmlPreviewActivate, useHtmlPreviewRenderer } from "./HtmlPreviewActivate";
+export type { HtmlPreviewActivateProps } from "./HtmlPreviewActivate";
+
+export {
+  createFrameHost,
+  resolveContentOrigin,
+  clampFrameHeight,
+  DEFAULT_CONTENT_ORIGIN,
+  FRAME_MIN_HEIGHT_PX,
+  FRAME_MAX_HEIGHT_PX,
+} from "./htmlFrameHost";
+export type {
+  FrameHostController,
+  FrameHostState,
+  FrameHostContent,
+  HostFrameLike,
+  MessageDisposition,
+} from "./htmlFrameHost";

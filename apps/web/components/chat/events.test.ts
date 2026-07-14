@@ -50,6 +50,7 @@ describe("describeSystemEvent", () => {
     "job_run",
     "auth",
     "limit_rejected",
+    "flag_changed",
   ];
 
   it("produces a non-empty summary for every event kind", () => {

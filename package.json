@@ -17,6 +17,8 @@
     "codegen": "turbo run codegen",
     "check": "turbo run lint typecheck test",
     "check:secrets": "node scripts/check-secrets.mjs",
+    "check:sandbox": "node scripts/check-sandbox-grep.mjs",
+    "test:security": "node e2e/security/hostile-artifacts.mjs",
     "format": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "clean": "turbo run clean && rm -rf node_modules"
   },

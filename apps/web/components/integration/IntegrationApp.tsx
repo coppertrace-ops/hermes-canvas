@@ -16,30 +16,34 @@
  * which of the two it is — demo content is never dressed up as live Hermes state.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useConvex, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import { useAuthToken } from "@convex-dev/auth/react";
 import { AppShell, StatusDot, Text, ThemeToggle } from "@hermes/ui";
 import type { StatusTone } from "@hermes/ui";
 import { SplitPane } from "@hermes/render";
 import type { CanvasDataAdapter } from "@hermes/render";
-import { CanvasShell } from "../canvas";
+import { CanvasShell, useHtmlPreviewRenderer } from "../canvas";
+import type { EditBoardFn } from "../canvas";
 import { ChatPane, ChatProvider, MockChatPane, createMockChatBackend } from "../chat";
 import type { ChatBackend } from "../chat";
 import { HistoryPanel, useMockHistoryAdapter } from "../history";
 import type { HistoryAdapter } from "../history";
 import { api } from "../../convex/_generated/api";
 import { useHasConvex } from "../../app/providers";
+import { FlagsProvider } from "../flags";
 import { useDemoCanvasAdapter } from "./useDemoCanvasAdapter";
 import { useConvexCanvasAdapter } from "./useConvexCanvasAdapter";
 import { useConvexHistoryAdapter } from "./useConvexHistoryAdapter";
 import { createConvexChatBackend } from "./convexChatBackend";
 import { buildDemoChatItems } from "./demoSeed";
 import { ReadershipPanel } from "../metrics";
+import { JobsPanel } from "../jobs";
+import { useFlags } from "../flags";
 import { bannerFor, resolveWorkspaceMode, type BannerCopy } from "./workspaceMode";
 
-type View = "canvas" | "history";
+type View = "canvas" | "history" | "jobs";
 
 /**
  * The Convex HTTP-action origin (`*.convex.site`), where `/attachments/:id` is
@@ -64,7 +68,15 @@ function Brand() {
   );
 }
 
-function ViewSwitch({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+function ViewSwitch({
+  view,
+  onChange,
+  showJobs,
+}: {
+  view: View;
+  onChange: (v: View) => void;
+  showJobs: boolean;
+}) {
   return (
     <div className="hc-viewswitch" role="group" aria-label="Right pane view">
       <button
@@ -83,6 +95,16 @@ function ViewSwitch({ view, onChange }: { view: View; onChange: (v: View) => voi
       >
         History
       </button>
+      {showJobs && (
+        <button
+          type="button"
+          className="hc-viewswitch__btn"
+          aria-pressed={view === "jobs"}
+          onClick={() => onChange("jobs")}
+        >
+          Jobs
+        </button>
+      )}
     </div>
   );
 }
@@ -119,6 +141,8 @@ function WorkspaceView({
   activeArtifactId,
   historyAdapter,
   readership,
+  onEditBoard,
+  jobs,
 }: {
   banner: BannerCopy;
   statusLabel: string;
@@ -130,15 +154,26 @@ function WorkspaceView({
   historyAdapter: HistoryAdapter;
   /** Optional owner readership summary, mounted under history (live mode only). */
   readership?: ReactNode;
+  /** Live board-edit commit (P6). Omitted in demo (boards flag is off there). */
+  onEditBoard?: EditBoardFn;
+  /** Live Jobs tab (P6). Shown as a third view only when `jobs_tab` is on. */
+  jobs?: ReactNode;
 }) {
   const [view, setView] = useState<View>("canvas");
+  // Flag-gated sandbox previews for HTML diffs (WP5): defined only when
+  // `html_artifacts` is on; otherwise HtmlDiffView keeps its honest pending slot.
+  const renderHtmlPreview = useHtmlPreviewRenderer();
+  const { jobs_tab } = useFlags();
+  const showJobs = jobs_tab && jobs !== undefined;
+  // If the jobs flag flips off while the jobs view is active, fall back to canvas.
+  const effectiveView: View = view === "jobs" && !showJobs ? "canvas" : view;
 
   const header = useMemo(
     () => (
       <div className="hc-header">
         <Brand />
         <div className="hc-header__spacer" />
-        <ViewSwitch view={view} onChange={setView} />
+        <ViewSwitch view={effectiveView} onChange={setView} showJobs={showJobs} />
         <div className="hc-header__spacer" />
         <div className="hc-header__controls">
           <span
@@ -154,23 +189,26 @@ function WorkspaceView({
         </div>
       </div>
     ),
-    [view, statusLabel, statusTone],
+    [effectiveView, statusLabel, statusTone, showJobs],
   );
 
   const rightPane =
-    view === "canvas" ? (
+    effectiveView === "jobs" ? (
+      <div className="hc-history-region">{jobs}</div>
+    ) : effectiveView === "canvas" ? (
       <div className="hc-pane-fill">
         <CanvasShell
           adapter={canvasAdapter}
           activeTabId={activeTabId}
           activeArtifactId={activeArtifactId}
+          onEditBoard={onEditBoard}
           style={{ height: "100%" }}
         />
       </div>
     ) : (
       <div className="hc-history-region">
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--hc-space-4)" }}>
-          <HistoryPanel adapter={historyAdapter} />
+          <HistoryPanel adapter={historyAdapter} renderHtmlPreview={renderHtmlPreview} />
           {readership}
         </div>
       </div>
@@ -241,6 +279,14 @@ function LiveWorkspace() {
   const { adapter: canvasAdapter, activeTabId, activeArtifactId } = useConvexCanvasAdapter();
   const historyAdapter = useConvexHistoryAdapter(activeArtifactId);
 
+  const editBoardMut = useMutation(api.canvas.editBoard);
+  const onEditBoard = useCallback<EditBoardFn>(
+    (artifactId, parentSeq, nextContent, why) => {
+      void editBoardMut({ artifact_id: artifactId, parent_seq: parentSeq, content: nextContent, why });
+    },
+    [editBoardMut],
+  );
+
   return (
     <WorkspaceView
       banner={bannerFor("live", true)}
@@ -256,6 +302,8 @@ function LiveWorkspace() {
       activeArtifactId={activeArtifactId}
       historyAdapter={historyAdapter}
       readership={<ReadershipPanel />}
+      onEditBoard={onEditBoard}
+      jobs={<JobsPanel />}
     />
   );
 }
@@ -315,5 +363,7 @@ function useConnectTimeout(ms: number): boolean {
 
 export function IntegrationApp() {
   const hasConvex = useHasConvex();
-  return hasConvex ? <ConvexWorkspace /> : <DemoWorkspace connected={false} />;
+  return (
+    <FlagsProvider>{hasConvex ? <ConvexWorkspace /> : <DemoWorkspace connected={false} />}</FlagsProvider>
+  );
 }
