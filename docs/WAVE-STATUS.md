@@ -31,8 +31,9 @@ Base commit at Wave 2 start: `7b8c543`.
 | WP1 — feature flags | `wave2/wp1-flags` (off wp0-triage) | ✅ done | gates.md §WP1. `flags` table + `flag_changed` event (additive); owner-only `setFlag` + atomic audit; `useFlags()`; runbook §9. |
 | WP2 — `packages/policy` | `wave2/wp2-policy` | ✅ done | gates.md §WP2. Real CSP/sandbox/frame-protocol/sanitizer; 31 policy tests. |
 | WP3 — content origin | `wave2/wp3-content` | ✅ done (local) | gates.md §WP3. Static shell + runtime; vercel.json headers generated from policy; local header parity 16 checks. **First deploy F1-gated.** |
-| WP4 — app-origin CSP | `wave2/wp4-app-csp` | ▶ next | — |
-| WP5–WP11 | — | pending | — |
+| WP4 — app-origin CSP | `wave2/wp4-app-csp` | ✅ done | gates.md §WP4. CSP floor in next.config from policy (JS mirror drift-guarded); prod build + assert-headers --app 9 checks + smoke vs prod/dev. Fixed pre-existing signin build break. |
+| WP5 — HTML artifact host tile | `wave2/wp5-host-tile` | ▶ next | — |
+| WP6=G5, WP7–WP11 | — | pending | — |
 
 **Flag states (implemented; all default-OFF, no prod flips yet):** `html_artifacts`=off, `boards`=off, `jobs_tab`=off. Flips are owner-only via `flags.setFlag`; prod flips are Frank-gated (F4).
 

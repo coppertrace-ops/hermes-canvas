@@ -80,16 +80,39 @@ export interface AppCspHosts {
  *
  * The `wss://` connect-src entry is derived from the `convexCloud` host by
  * swapping the scheme, so callers pass the `https://` origin once.
+ *
+ * `opts.dev` adds ONLY the allowances Next.js dev-mode needs and that are never
+ * shipped to production: `'unsafe-eval'` (React Refresh / webpack HMR eval) and
+ * `ws://localhost:*` / `http://localhost:*` connect sources (the HMR socket). The
+ * default (prod) string carries neither — the security-relevant CSP is the prod
+ * one, and a header-assertion runs against a production build.
  */
-export function buildAppCsp({ convexCloud, convexSite, contentHost }: AppCspHosts): string {
-  const convexWs = convexCloud.replace(/^https:\/\//, "wss://");
+export function buildAppCsp(
+  { convexCloud, convexSite, contentHost }: AppCspHosts,
+  opts: { dev?: boolean } = {},
+): string {
+  const convexWs = convexCloud ? convexCloud.replace(/^https:\/\//, "wss://") : "";
+  // Empty hosts (demo mode: no Convex configured) are filtered so the directive
+  // stays clean `'self'`-only rather than carrying blank tokens.
+  const join = (tokens: readonly string[]): string => tokens.filter(Boolean).join(" ");
+
+  const scriptSrc = join(["script-src", "'self'", "'unsafe-inline'", opts.dev ? "'unsafe-eval'" : ""]);
+  const imgSrc = join(["img-src", "'self'", "data:", "blob:", convexSite]);
+  const connectSrc = join([
+    "connect-src",
+    "'self'",
+    convexCloud,
+    convexWs,
+    convexSite,
+    ...(opts.dev ? ["ws://localhost:*", "http://localhost:*"] : []),
+  ]);
   return csp([
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    scriptSrc,
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: ${convexSite}`,
+    imgSrc,
     "font-src 'self'",
-    `connect-src 'self' ${convexCloud} ${convexWs} ${convexSite}`,
+    connectSrc,
     `frame-src ${contentHost}`,
     "object-src 'none'",
     "base-uri 'self'",

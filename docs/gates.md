@@ -148,7 +148,43 @@ and record here. The committed `vercel.json` bakes `frame-ancestors` =
 commit before deploy (F3).
 
 ## WP4 — App-origin CSP
-_pending_
+
+Branch: `wave2/wp4-app-csp` (off `wave2/wp3-content`).
+
+`next.config.mjs` now ships the app CSP + `nosniff` on every response (spec §2.3),
+built from `@hermes/policy` `buildAppCsp`. Because `next.config.mjs` runs under
+plain Node (no TS transpile), it imports a byte-identical JS mirror
+`apps/web/appCsp.mjs`, drift-guarded by `apps/web/appCsp.test.ts` (asserts the mirror
+=== policy for prod/dev/demo). The CSP is a SECURITY FLOOR (not flagged). Dev adds
+ONLY HMR allowances (`'unsafe-eval'` + `ws://localhost:*`), never shipped to prod.
+
+| Criterion | Command | Date | Exit | Evidence |
+|---|---|---|---|---|
+| Web production build (CSP + force-dynamic signin) | `pnpm --filter @hermes/web build` | 2026-07-14 | 0 | `✓ Compiled successfully`; routes `/` ○ static, `/signin` ƒ dynamic, `/_not-found` ○ |
+| App CSP present + exact directives (prod server) | `node e2e/security/assert-headers.mjs --app http://localhost:3300` | 2026-07-14 | 0 | `✅ HEADER ASSERTIONS PASSED — 9 checks (--app)` (against `next start`) |
+| App works under CSP (prod build) | `BASE_URL=http://localhost:3300 node e2e/browser-smoke.mjs` | 2026-07-14 | 0 | `✅ BROWSER SMOKE PASSED — 23 checks` (vs `next start`, prod CSP active) |
+| Dev CSP doesn't break HMR/render | `BASE_URL=http://localhost:3300 node e2e/browser-smoke.mjs` | 2026-07-14 | 0 | `✅ 23 checks` (vs `next dev`, dev CSP with `unsafe-eval`+ws) |
+| CSP mirror drift guard + floor asserts | `pnpm check` (`@hermes/web` test) | 2026-07-14 | 0 | `appCsp.test.ts (9 tests)` — mirror===policy (prod/dev/demo), WS reachable, frame-src pinned, no wildcard img-src, no prod unsafe-eval |
+| Lint + typecheck + test (all pkgs) | `pnpm check` | 2026-07-14 | 0 | `28 successful, 28 total` |
+| Secrets scan | `pnpm check:secrets` | 2026-07-14 | 0 | `check-secrets: OK` |
+
+**Prod app CSP (demo build — no Convex env; connect-src is `'self'` only, correct):**
+`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-src https://hermes-canvas-content.vercel.app; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'` + `nosniff`. With `NEXT_PUBLIC_CONVEX_URL` set (live/prod), `img-src`/`connect-src` gain the exact `*.convex.site`/`*.convex.cloud` + `wss://` tokens (Convex WS regression covered by unit + the live-mode manual check at deploy).
+
+**Pre-existing blocker fixed (WP0-ledger inaccuracy #2):** `pnpm build` was recorded
+green at WP0 but actually fails — `app/(auth)/signin/page.tsx` crashed static
+prerender (`useAuthActions()` undefined with no Convex Auth provider at build). The
+signin page is unchanged since Wave 1, so the failure predates Wave 2; the WP0
+`pnpm build` "2 successful" line was inaccurate. **Fix:** `export const dynamic =
+"force-dynamic"` on the signin route (a sign-in page depends on runtime auth state —
+inherently dynamic). Build now green.
+
+**F7/threat-model note (queued):** the app-origin `script-src`/`style-src`
+`'unsafe-inline'` is a documented concession (Next injects inline bootstrap
+scripts/styles without a nonce). It is NOT a sandbox relaxation — the app origin has
+no untrusted-HTML injection surface (Markdown sanitized, no raw-HTML passthrough,
+`javascript:` stripped, external images blocked). To be written up in
+`docs/threat-model.md` (WP10).
 
 ## WP5 — HTML artifact host tile
 _pending_

@@ -67,4 +67,21 @@ describe("buildAppCsp — app-origin hardening", () => {
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
   });
+
+  it("dev posture adds ONLY HMR allowances; prod has neither", () => {
+    const dev = buildAppCsp({ convexCloud: CONVEX_CLOUD, convexSite: CONVEX_SITE, contentHost: CONTENT }, { dev: true });
+    expect(dev).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    expect(dev).toContain("ws://localhost:*");
+    expect(dev).toContain("http://localhost:*");
+    // Prod carries none of these.
+    expect(csp).not.toContain("unsafe-eval");
+    expect(csp).not.toContain("localhost");
+  });
+
+  it("demo mode (empty Convex hosts) yields a clean self-only connect-src", () => {
+    const demo = buildAppCsp({ convexCloud: "", convexSite: "", contentHost: CONTENT });
+    expect(demo).toContain("connect-src 'self';");
+    expect(demo).toContain("img-src 'self' data: blob:;");
+    expect(demo).not.toContain("  "); // no blank tokens / double spaces
+  });
 });
