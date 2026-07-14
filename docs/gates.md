@@ -317,8 +317,30 @@ flags; prod flips Frank-gated F4).
 ## G6 — Boards + jobs validation
 _pending_
 
-## WP10 — P7 hardening
-_pending_
+## WP10 — P7 hardening + docs
+
+Branch: `wave2-fable`.
+
+- **`docs/threat-model.md`** written (WARDEN): trust boundaries, the sandbox
+  egress-kill controls + enforcement table, app-origin hardening, the app
+  `'unsafe-inline'` concession as a documented F7 posture note (not a relaxation),
+  attachment serving, feature-flag kill switches, prompt-injection posture, and a
+  residual-risk table.
+- **`docs/design-language.md`** already present (GLASS, Wave 1) — verified current;
+  the new board/jobs surfaces use the token system (`cssVar`) and inline styles, no
+  new hero-surface className coverage gap (`pnpm check` styles-coverage green).
+- **`docs/runbook.md` §9** ("Flip a feature flag") already covers the Wave 2 kill
+  switches, including that flips gate rendering not ingestion.
+- **`docs/WAVE-STATUS.md`** updated: WP5/G5/WP7/WP8/G6 marked done on `wave2-fable`,
+  branch lineage recorded, flag states restated.
+
+| Criterion | Command | Date | Exit | Evidence |
+|---|---|---|---|---|
+| Lint + typecheck + test (all pkgs) after docs + all WPs | `pnpm check` | 2026-07-14 | 0 | `28 successful, 28 total` |
+| Full web unit suite | `pnpm --filter @hermes/web test` | 2026-07-14 | 0 | `Test Files 30 passed · Tests 241 passed` |
+| Sandbox + secrets guards | `node scripts/check-sandbox-grep.mjs` · `pnpm check:secrets` | 2026-07-14 | 0 | `OK` · `OK` |
 
 ## G7 — Launch (Frank-gated)
-_pending_
+_pending — requires prod deploys (F1/F3), prod flag flips one-at-a-time (F4), the
+prompt-injection fire drill, and the 4-week readership experiment start. Not
+claimable from this machine; see "Waiting on Frank" in WAVE-STATUS.md._

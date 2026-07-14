@@ -32,12 +32,17 @@ Base commit at Wave 2 start: `7b8c543`.
 | WP2 — `packages/policy` | `wave2/wp2-policy` | ✅ done | gates.md §WP2. Real CSP/sandbox/frame-protocol/sanitizer; 31 policy tests. |
 | WP3 — content origin | `wave2/wp3-content` | ✅ done (local) | gates.md §WP3. Static shell + runtime; vercel.json headers generated from policy; local header parity 16 checks. **First deploy F1-gated.** |
 | WP4 — app-origin CSP | `wave2/wp4-app-csp` | ✅ done | gates.md §WP4. CSP floor in next.config from policy (JS mirror drift-guarded); prod build + assert-headers --app 9 checks + smoke vs prod/dev. Fixed pre-existing signin build break. |
-| WP5 — HTML artifact host tile | `wave2/wp5-host-tile` | ▶ next | — |
-| WP6=G5, WP7–WP11 | — | pending | — |
+| WP5 — HTML artifact host tile | `wave2-fable` | ✅ done | gates.md §WP5. `HtmlArtifactHost` + DOM-free `createFrameHost`; `ArtifactPane` html-static flag-gated; history preview injection. |
+| G5 — sandbox security audit | `wave2-fable` | ✅ local-green | gates.md §G5. Hostile-artifact egress suite (7 checks, 0 leaks) + sandbox grep-guard + local header parity. **Deployed `--url` header assert is F1-gated.** |
+| WP7 — boards + human `editBoard` | `wave2-fable` | ✅ done | gates.md §WP7. Owner-gated `editBoard` (append-only, contended); `BoardView` drag=one version; behind `boards` flag. |
+| WP8 — jobs tab + overdue + metrics | `wave2-fable` | ✅ done | gates.md §WP8. `jobs.listJobs` live; cron parse + overdue math; scheduler-health card; behind `jobs_tab` flag. |
+| G6 — boards + jobs validation | `wave2-fable` | ✅ done | gates.md §G6 (covered by WP7+WP8). |
+| WP10 — P7 hardening + docs | `wave2-fable` | ◧ in progress | `docs/threat-model.md` written; design-language present; gates/WAVE-STATUS updated. |
+| G7 — launch | — | pending (Frank) | prod deploys/flag-flips/readership start — F1/F3/F4. |
 
 **Flag states (implemented; all default-OFF, no prod flips yet):** `html_artifacts`=off, `boards`=off, `jobs_tab`=off. Flips are owner-only via `flags.setFlag`; prod flips are Frank-gated (F4).
 
-**Branch lineage:** WP0 baseline commits live on `wave2/wp0-triage`, not `main`. Subsequent WP branches are cut from that green baseline (main lacks it). Integration target: `wave2-integration`.
+**Branch lineage:** WP0–WP4 live on the stacked `wave2/wp*` branches; WP5–WP10 continue on **`wave2-fable`** (cut from `wave2/wp5-host-tile` = the green WP0–WP4 baseline). Integration target: `wave2-integration`. Nothing pushed or deployed — all prod actions remain Frank-gated.
 
 ### Waiting on Frank (Wave 2)
 - **F1 — create/link Vercel `content` project + first deploy (WP3).** Content app is built & locally header-verified. After deploy, run and record: `node e2e/security/assert-headers.mjs --url https://<content-host>`. If the prod app origin ≠ `https://hermes-canvas.vercel.app`, set `NEXT_PUBLIC_APP_ORIGIN=<app-origin>`, `pnpm --filter @hermes/content gen-headers`, commit `apps/content/vercel.json` first (F3).
