@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useConvex, useMutation, useQuery } from "convex/react";
-import { useAuthToken } from "@convex-dev/auth/react";
+import { useAuthToken, useConvexAuth } from "@convex-dev/auth/react";
 import { AppShell, StatusDot, Text, ThemeToggle } from "@hermes/ui";
 import type { StatusTone } from "@hermes/ui";
 import { SplitPane } from "@hermes/render";
@@ -315,6 +315,7 @@ function LiveWorkspace() {
  * hooks only mount inside `LiveWorkspace`.
  */
 function ConvexWorkspace() {
+  const { isAuthenticated } = useConvexAuth();
   const artifacts = useQuery(api.canvas.listArtifacts, {});
   const connectTimedOut = useConnectTimeout(3000);
   const mode = resolveWorkspaceMode({
@@ -325,6 +326,9 @@ function ConvexWorkspace() {
   });
 
   if (mode === "live") return <LiveWorkspace />;
+  // If the owner is signed in but the deployment is empty, show the live workspace
+  // so Wave 2 feature flags (Jobs, Boards, HTML previews) still render their chrome.
+  if (mode === "demo" && isAuthenticated) return <LiveWorkspace />;
   if (mode === "demo") return <DemoWorkspace connected />;
 
   // Loading: render the demo shell chrome behind an honest "connecting" banner so
