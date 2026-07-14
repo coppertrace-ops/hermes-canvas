@@ -11,6 +11,7 @@ import type {
 } from "@hermes/render";
 import { TabBar } from "./TabBar";
 import { ArtifactPane } from "./ArtifactPane";
+import type { EditBoardFn } from "./ArtifactPane";
 
 /**
  * Canvas shell (PANES; plan §7). Composes the {@link TabBar}, an optional
@@ -31,6 +32,8 @@ export interface CanvasShellProps {
   activeArtifactId: string | null;
   mermaidEngine?: MermaidEngine;
   markdownPolicy?: MarkdownPolicy;
+  /** Human board-edit commit (P6). Omitted ⇒ boards render read-only. */
+  onEditBoard?: EditBoardFn;
   className?: string;
   style?: CSSProperties;
 }
@@ -41,6 +44,7 @@ export function CanvasShell({
   activeArtifactId,
   mermaidEngine,
   markdownPolicy,
+  onEditBoard,
   className,
   style,
 }: CanvasShellProps) {
@@ -110,6 +114,7 @@ export function CanvasShell({
           content={content}
           mermaidEngine={mermaidEngine}
           markdownPolicy={markdownPolicy}
+          onEditBoard={onEditBoard}
         />
       </div>
     </section>

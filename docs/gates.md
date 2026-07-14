@@ -251,7 +251,29 @@ item is the deployed-origin header assertion (infra, F1). Recommend `html_artifa
 prod flip only after that `--url` run is green.
 
 ## WP7 — Board UI + human board mutation
-_pending_
+
+Branch: `wave2-fable`. Behind the `boards` flag (default OFF).
+
+`canvas.editBoard` (browser, owner-gated): a human drag/card edit lands as ONE
+appended version via the shared `planUpdateArtifact` (`replace_all`), so
+append-only + contention are inherited — a stale `parent_seq` flags `contended`
+and still lands (never silent loss), routing to the existing merge prompt. Board
+JSON is validated (visible `validation_failed` rejection, never truncation); a
+non-board artifact is refused. `BoardView` (PANES) renders columns/cards with
+HTML5 drag → the pure `boardOps.moveCard` snapshot math → one `onEdit` commit;
+read-only without `onEdit`. `ArtifactPane` renders `board` behind `useFlags().boards`
+(off ⇒ honest disabled state; malformed JSON ⇒ error + no blank);
+`IntegrationApp` wires the live mutation. `BoardDiffView` was already wired via
+`diffArtifact`; a `moveCard` reads back through `diffBoard` as a single MOVE (test).
+
+| Criterion | Command | Date | Exit | Evidence |
+|---|---|---|---|---|
+| `editBoard`: append-only owner drag, anon reject, stale⇒contended (both land), malformed⇒structured reject, non-board refused | `pnpm --filter @hermes/web test` | 2026-07-14 | 0 | `editBoard.test.ts (5 tests)` |
+| Board ops: cross-column move, same-column reorder w/ index compensation, no-op skip, guards, clamp; move reads back as MOVE via `@hermes/diff` | same run | 2026-07-14 | 0 | `boardOps.test.ts (8 tests)` |
+| Board render: columns/cards/counts/labels; read-only not draggable; editable draggable; flag-off disabled state | same run | 2026-07-14 | 0 | `board.smoke.test.tsx (4 tests)` — `Test Files 26 passed · Tests 219 passed` |
+| Lint + typecheck + test (all pkgs) | `pnpm check` | 2026-07-14 | 0 | `28 successful, 28 total` |
+| Flags-off smoke unchanged | `BASE_URL=http://localhost:3300 node e2e/browser-smoke.mjs` | 2026-07-14 | 0 | `✅ BROWSER SMOKE PASSED — 23 checks` |
+| Secrets + sandbox guards | `pnpm check:secrets` · `node scripts/check-sandbox-grep.mjs` | 2026-07-14 | 0 | `check-secrets: OK` · `check-sandbox-grep: OK` |
 
 ## WP8 — Jobs tab
 _pending_

@@ -173,7 +173,7 @@ function hostileHtml() {
   tryeach('dynimg',() => { const i = new Image(); i.src = S + "/dyn-img.png"; });
   tryeach('dynscript', () => { const el = document.createElement('script'); el.src = S + "/evil.js"; document.body.appendChild(el); });
   tryeach('formsubmit', () => { document.getElementById('f').submit(); });
-  // Escape attempts — sandbox has no allow-top-navigation / allow-popups.
+  // Escape attempts — the sandbox withholds the navigation/popup tokens. sandbox-grep-allow: hostile-test payload, asserts these are blocked
   tryeach('topnav', () => { window.top.location = S + "/escape"; });
   tryeach('parentnav', () => { window.parent.location = S + "/escape2"; });
   tryeach('popup', () => { window.open(S + "/popup", "_blank"); });

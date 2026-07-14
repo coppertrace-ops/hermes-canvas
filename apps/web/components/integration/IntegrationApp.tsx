@@ -16,15 +16,16 @@
  * which of the two it is — demo content is never dressed up as live Hermes state.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useConvex, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import { useAuthToken } from "@convex-dev/auth/react";
 import { AppShell, StatusDot, Text, ThemeToggle } from "@hermes/ui";
 import type { StatusTone } from "@hermes/ui";
 import { SplitPane } from "@hermes/render";
 import type { CanvasDataAdapter } from "@hermes/render";
 import { CanvasShell, useHtmlPreviewRenderer } from "../canvas";
+import type { EditBoardFn } from "../canvas";
 import { ChatPane, ChatProvider, MockChatPane, createMockChatBackend } from "../chat";
 import type { ChatBackend } from "../chat";
 import { HistoryPanel, useMockHistoryAdapter } from "../history";
@@ -120,6 +121,7 @@ function WorkspaceView({
   activeArtifactId,
   historyAdapter,
   readership,
+  onEditBoard,
 }: {
   banner: BannerCopy;
   statusLabel: string;
@@ -131,6 +133,8 @@ function WorkspaceView({
   historyAdapter: HistoryAdapter;
   /** Optional owner readership summary, mounted under history (live mode only). */
   readership?: ReactNode;
+  /** Live board-edit commit (P6). Omitted in demo (boards flag is off there). */
+  onEditBoard?: EditBoardFn;
 }) {
   const [view, setView] = useState<View>("canvas");
   // Flag-gated sandbox previews for HTML diffs (WP5): defined only when
@@ -168,6 +172,7 @@ function WorkspaceView({
           adapter={canvasAdapter}
           activeTabId={activeTabId}
           activeArtifactId={activeArtifactId}
+          onEditBoard={onEditBoard}
           style={{ height: "100%" }}
         />
       </div>
@@ -245,6 +250,14 @@ function LiveWorkspace() {
   const { adapter: canvasAdapter, activeTabId, activeArtifactId } = useConvexCanvasAdapter();
   const historyAdapter = useConvexHistoryAdapter(activeArtifactId);
 
+  const editBoardMut = useMutation(api.canvas.editBoard);
+  const onEditBoard = useCallback<EditBoardFn>(
+    (artifactId, parentSeq, nextContent, why) => {
+      void editBoardMut({ artifact_id: artifactId, parent_seq: parentSeq, content: nextContent, why });
+    },
+    [editBoardMut],
+  );
+
   return (
     <WorkspaceView
       banner={bannerFor("live", true)}
@@ -260,6 +273,7 @@ function LiveWorkspace() {
       activeArtifactId={activeArtifactId}
       historyAdapter={historyAdapter}
       readership={<ReadershipPanel />}
+      onEditBoard={onEditBoard}
     />
   );
 }

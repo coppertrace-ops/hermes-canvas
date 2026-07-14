@@ -8,7 +8,7 @@ import type {
   FeedMessage,
   UpdatesResponse,
 } from "@hermes/contract";
-import { CanvasError, planRestoreArtifact } from "@hermes/contract";
+import { CanvasError, parseBoardContent, planRestoreArtifact, planUpdateArtifact } from "@hermes/contract";
 import { v } from "convex/values";
 import { requireOwner } from "./authGuard";
 import type { Doc } from "./_generated/dataModel";
@@ -388,6 +388,87 @@ export const restoreArtifact = mutation({
       });
     } catch (e) {
       return reject(ctx, e, author, { artifact_id: args.artifact_id, version_seq: args.seq }, now);
+    }
+    await applyPlan(ctx, plan);
+    return { ok: true, result: plan.result };
+  },
+});
+
+/**
+ * Human board edit from the Kanban UI (Wave 2 P6, plan §6) — a drag or card edit
+ * lands as ONE appended version (`replace_all` of the full board JSON), exactly
+ * like the agent's `PATCH /agent/artifacts/:id`. Browser-only, so it requires the
+ * signed-in owner.
+ *
+ * Append-only + contention fall out of the shared plan layer: the caller passes
+ * the `parent_seq` it last read, and `planUpdateArtifact` flags the write
+ * `contended` (never drops it) if the head moved underneath — the same
+ * simultaneous-edit → merge-prompt path the history UI already surfaces. The board
+ * JSON is validated here (rejected visibly, never truncated) before it is stored,
+ * and again by `validateContent` inside the plan.
+ */
+export const editBoard = mutation({
+  args: {
+    artifact_id: v.string(),
+    parent_seq: v.number(),
+    content: v.string(),
+    why: v.string(),
+  },
+  handler: async (ctx, args): Promise<WriteOutcome> => {
+    await requireOwner(ctx);
+    const now = Date.now();
+    const author: Author = "human";
+    const doc = await getArtifactByKey(ctx, args.artifact_id);
+    if (!doc) {
+      return reject(ctx, CanvasError.notFound(`artifact ${args.artifact_id}`), author, { artifact_id: args.artifact_id }, now);
+    }
+    if (doc.type !== "board") {
+      return reject(
+        ctx,
+        CanvasError.validation(`artifact ${args.artifact_id} is a ${doc.type}, not a board`),
+        author,
+        { artifact_id: args.artifact_id },
+        now,
+      );
+    }
+    // Reject malformed board JSON before it lands (visible rejection, not silent
+    // truncation). `validateContent` re-checks inside the plan; this gives a
+    // precise message to the UI.
+    try {
+      parseBoardContent(args.content);
+    } catch (e) {
+      return reject(
+        ctx,
+        CanvasError.validation(`board content is invalid: ${e instanceof Error ? e.message : String(e)}`),
+        author,
+        { artifact_id: args.artifact_id },
+        now,
+      );
+    }
+    const recentArt = await recentArtifactWrites(ctx, args.artifact_id, now);
+    const recentGlobal = await recentGlobalAgentWrites(ctx, now);
+    let plan;
+    try {
+      plan = planUpdateArtifact({
+        artifact: {
+          id: doc.art_key,
+          tab_id: doc.tab_id,
+          type: doc.type,
+          title: doc.title,
+          status: doc.status,
+          created_by: doc.created_by,
+          head_seq: doc.head_seq,
+          created_at: doc.created_at,
+        },
+        parentContent: "",
+        input: { parent_seq: args.parent_seq, why: args.why, edit: { mode: "replace_all", content: args.content } },
+        author,
+        now,
+        recentArtifactWrites: recentArt,
+        recentGlobalWrites: recentGlobal,
+      });
+    } catch (e) {
+      return reject(ctx, e, author, { artifact_id: args.artifact_id }, now);
     }
     await applyPlan(ctx, plan);
     return { ok: true, result: plan.result };

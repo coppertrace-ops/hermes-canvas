@@ -15,7 +15,9 @@ import type {
   MarkdownPolicy,
   MermaidEngine,
 } from "@hermes/render";
+import { parseBoardContent } from "@hermes/contract";
 import { useFlags } from "../flags";
+import { BoardView } from "../board";
 import { HtmlArtifactHost } from "./HtmlArtifactHost";
 
 /**
@@ -26,6 +28,18 @@ import { HtmlArtifactHost } from "./HtmlArtifactHost";
  * state naming the flag, never a blank or a crash. `board` follows in P6 behind
  * its own flag.
  */
+/**
+ * Commit a human board edit (drag / card change) as one appended version.
+ * `parentSeq` is the seq the edit was based on, so contention is detected in the
+ * plan layer (plan §6). Omitted ⇒ the board renders read-only.
+ */
+export type EditBoardFn = (
+  artifactId: string,
+  parentSeq: number,
+  nextContent: string,
+  why: string,
+) => void;
+
 export interface ArtifactPaneProps {
   /** The focused artifact's summary, or null when nothing is selected. */
   artifact: CanvasArtifactView | null;
@@ -35,6 +49,8 @@ export interface ArtifactPaneProps {
   mermaidEngine?: MermaidEngine;
   /** Markdown sanitizer policy override (defaults to the strict plan §4 posture). */
   markdownPolicy?: MarkdownPolicy;
+  /** Board edit commit (P6). Omitted ⇒ boards render read-only. */
+  onEditBoard?: EditBoardFn;
   className?: string;
 }
 
@@ -43,6 +59,7 @@ export function ArtifactPane({
   content,
   mermaidEngine,
   markdownPolicy,
+  onEditBoard,
   className,
 }: ArtifactPaneProps) {
   if (!artifact) {
@@ -67,12 +84,13 @@ export function ArtifactPane({
         content={content}
         mermaidEngine={mermaidEngine}
         markdownPolicy={markdownPolicy}
+        onEditBoard={onEditBoard}
       />
     </Panel>
   );
 }
 
-function ArtifactBody({ artifact, content, mermaidEngine, markdownPolicy }: ArtifactPaneProps) {
+function ArtifactBody({ artifact, content, mermaidEngine, markdownPolicy, onEditBoard }: ArtifactPaneProps) {
   if (!artifact) return <ArtifactEmpty />;
 
   switch (content.status) {
@@ -103,16 +121,48 @@ function ArtifactBody({ artifact, content, mermaidEngine, markdownPolicy }: Arti
         case "html-static":
           return <HtmlStaticBody artifact={artifact} version={version} />;
         case "board":
-          return (
-            <ArtifactEmpty
-              icon={null}
-              title={`${artifact.type} artifacts aren't available yet`}
-              description="This artifact type ships in a later phase, behind its feature flag."
-            />
-          );
+          return <BoardBody artifact={artifact} version={version} onEditBoard={onEditBoard} />;
       }
     }
   }
+}
+
+/**
+ * `board` body — flag seam for the P6 Kanban surface. Flag gates RENDERING only;
+ * stored board content is untouched. Malformed board JSON shows the parse error +
+ * raw source (never a blank), matching the plan's "render_error is visible" rule.
+ */
+function BoardBody({
+  artifact,
+  version,
+  onEditBoard,
+}: {
+  artifact: CanvasArtifactView;
+  version: ArtifactVersionView;
+  onEditBoard?: EditBoardFn;
+}) {
+  const { boards } = useFlags();
+  if (!boards) {
+    return (
+      <ArtifactEmpty
+        icon={null}
+        title="Boards are disabled"
+        description="The server-side boards flag is off. This board's content is stored and versioned; it renders once the flag is enabled (owner-only, audited)."
+      />
+    );
+  }
+  let board;
+  try {
+    board = parseBoardContent(version.content);
+  } catch (e) {
+    return (
+      <ArtifactError message={`This board could not be parsed: ${e instanceof Error ? e.message : String(e)}`} />
+    );
+  }
+  const onEdit = onEditBoard
+    ? (nextContent: string, why: string) => onEditBoard(artifact.id, version.seq, nextContent, why)
+    : undefined;
+  return <BoardView board={board} onEdit={onEdit} />;
 }
 
 /**

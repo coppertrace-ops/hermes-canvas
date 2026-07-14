@@ -12,7 +12,7 @@ export { TabBar } from "./TabBar";
 export type { TabBarProps } from "./TabBar";
 
 export { ArtifactPane } from "./ArtifactPane";
-export type { ArtifactPaneProps } from "./ArtifactPane";
+export type { ArtifactPaneProps, EditBoardFn } from "./ArtifactPane";
 
 export { HtmlArtifactHost } from "./HtmlArtifactHost";
 export type { HtmlArtifactHostProps } from "./HtmlArtifactHost";
