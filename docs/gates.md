@@ -79,8 +79,40 @@ for all Wave 2 work, `wave2/wp1-flags` is branched off that green baseline rathe
 than off `main` (which lacks it). Integration onto `wave2-integration` will carry
 the WP0 baseline forward.
 
-## WP2 — packages/policy
-_pending_
+## WP2 — `packages/policy` real implementation
+
+Branch: `wave2/wp2-policy` (off `wave2/wp1-flags`).
+
+Made `@hermes/policy` real (spec §2.3). New modules, all imported verbatim by later
+consumers (one source, no drift): `csp.ts` (`buildContentCsp(appOrigin)`,
+`buildAppCsp({convexCloud, convexSite, contentHost})`), `sandbox.ts`
+(`FRAME_SANDBOX_ATTR="allow-scripts"`, `FORBIDDEN_SANDBOX_TOKENS`),
+`frameProtocol.ts` (render/ready/height/render_error zod schemas + both-ends
+verifiers `isFromShell`/`isFromAppOrigin` + `readShellMessage`/`readRenderMessage`),
+`attachments.ts` (`ATTACHMENT_HEADERS`), `sanitizer.ts`
+(`MARKDOWN_SANITIZER_POLICY`, `MERMAID_SECURITY_LEVEL`), `limits.ts` (existing byte
+caps unchanged + `JOBS_GRACE_MIN_MS`/`JOBS_GRACE_FRACTION`). `POLICY_VERSION` bumped
+`0.0.0-pre-g2` → `1.0.0-g5`. Added `zod` dep.
+
+| Criterion | Command | Date | Exit | Evidence |
+|---|---|---|---|---|
+| Policy unit tests (verifiers incl. hostile synthesized events; exact CSP strings) | `pnpm --filter @hermes/policy test` | 2026-07-14 | 0 | `Test Files 3 passed (3) · Tests 31 passed (31)` — `frameProtocol.test.ts` 16 (source-identity, exact-origin, whitelist, hostile-event rejection), `csp.test.ts` 8 (byte-exact strings, egress-channel closure, no-CDN), `policy.test.ts` 7 (sandbox forbidden-token guard, attachment headers, sanitizer posture, jobs-grace, version bump) |
+| Lint + typecheck + test (all pkgs) | `pnpm check` | 2026-07-14 | 0 | `28 successful, 28 total` |
+| Browser smoke (unaffected; no consumer rewired yet) | `BASE_URL=http://localhost:3300 node e2e/browser-smoke.mjs` | 2026-07-14 | 0 | `✅ BROWSER SMOKE PASSED — 23 checks` |
+| Secrets scan | `pnpm check:secrets` | 2026-07-14 | 0 | `check-secrets: OK` |
+
+**Spec §2.3 exports → status:** `CONTENT_CSP` realized as `buildContentCsp(appOrigin)`
+(frame-ancestors requires the app origin, so it is parameterized like `buildAppCsp`
+— faithful to intent, byte-exact + tested). `buildAppCsp`, `FRAME_SANDBOX_ATTR`,
+frame message schemas + both-ends verifiers, `ATTACHMENT_HEADERS`, sanitizer config,
+LIMITS (incl. jobs grace): all present + tested.
+
+**Consumer rewiring deferred to owning WPs (WP2 only adds exports; no existing
+consumer broken):** `apps/content` shell → WP3, app `next.config.mjs` CSP → WP4,
+`@hermes/render` sanitizer adoption + PANES host tile → WP5, `files.ts`
+`ATTACHMENT_HEADERS` adoption + header-assertion → WP4/WP6. The `buildAppCsp`
+script-src `'unsafe-inline'` concession is validated against the running app in WP4
+and will be documented in `docs/threat-model.md` (F7 posture note, not a relaxation).
 
 ## WP3 — Content-origin app
 _pending_
