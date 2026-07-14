@@ -4,15 +4,14 @@
  * MessageBubble (OWNER: COURIER) — one chat message.
  *
  * Human messages align right on the accent surface; agent messages align left on a
- * neutral surface. Streaming replies show the typing dots after their partial text;
- * a failed outgoing message shows an honest error line with a Retry control (a
- * blocked send is visible, never a silent drop). Attachments render as read-only
- * chips — never inline-served bytes (plan §4).
+ * neutral surface. Agent bodies render sanitized markdown; human stay plain unless
+ * they contain markdown. Streaming replies show typing dots after partial text.
  */
 
 import { Button, Text } from "@hermes/ui";
 import type { CSSProperties } from "react";
 import { AttachmentPreview } from "./AttachmentPreview";
+import { MarkdownBody } from "./MarkdownBody";
 import { StreamingDots } from "./StreamingDots";
 import type { ChatMessage } from "./types";
 
@@ -34,11 +33,16 @@ function bubbleStyle(isHuman: boolean, isError: boolean): CSSProperties {
   };
 }
 
+function looksLikeMarkdown(body: string): boolean {
+  return /```|^\s{0,3}#{1,6}\s|^\s*[-*+]\s|\*\*[^*]+\*\*|`[^`]+`|\[.+\]\(.+\)/m.test(body);
+}
+
 export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
   const isHuman = message.role === "human";
   const isError = message.status === "error";
   const isStreaming = message.status === "streaming";
   const isSending = message.status === "sending";
+  const useMd = !isHuman || looksLikeMarkdown(message.body);
 
   return (
     <div
@@ -56,14 +60,20 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
         </Text>
 
         {message.body.length > 0 && (
-          <Text as="div" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {message.body}
+          <div style={{ position: "relative" }}>
+            {useMd ? (
+              <MarkdownBody>{message.body}</MarkdownBody>
+            ) : (
+              <Text as="div" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {message.body}
+              </Text>
+            )}
             {isStreaming && (
-              <span style={{ marginLeft: "var(--hc-space-1)" }}>
+              <span style={{ display: "inline-block", marginLeft: "var(--hc-space-1)" }}>
                 <StreamingDots />
               </span>
             )}
-          </Text>
+          </div>
         )}
         {message.body.length === 0 && isStreaming && <StreamingDots />}
 
@@ -84,7 +94,7 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
         {isError && (
           <div style={{ display: "flex", alignItems: "center", gap: "var(--hc-space-2)" }}>
             <Text size="xs" tone="danger">
-              {message.error ?? "Failed to send."}
+              {message.error || "Failed to send"}
             </Text>
             {onRetry && (
               <Button size="sm" variant="ghost" onClick={() => onRetry(message.id)}>

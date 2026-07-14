@@ -3,16 +3,10 @@
 /**
  * Live canvas adapter (OWNER: PROOF integration).
  *
- * The Convex-backed twin of {@link useDemoCanvasAdapter}: it satisfies the exact
- * same {@link CanvasDataAdapter} seam, so the PANES `CanvasShell` renders against
- * it with zero changes. It subscribes to the public LEDGER/CHRONICLE live queries
- * (`listTabs`, `listArtifacts`, `readArtifact`, `lastSeen.listArtifactChanges`)
- * and clears badges through the `lastSeen.markSeen` mutation. Only the active
- * artifact's content is subscribed — the shell only ever renders that one.
- *
- * Tab lifecycle (create/rename/reorder/archive) has no public human mutation yet
- * (those are agent-only `internalMutation`s), so those actions are honest no-ops
- * here, exactly as in the demo adapter — selection is the real wired behaviour.
+ * Convex-backed twin of useDemoCanvasAdapter. Also handles the common empty-tabs
+ * / orphan-artifact case: agent-created artifacts often have no tab_id and the
+ * tabs table may be empty, which previously left the UI on "No artifact selected"
+ * with no picker.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -25,13 +19,14 @@ import type {
 } from "@hermes/render";
 import { api } from "../../convex/_generated/api";
 
+/** Synthetic tab id used when Convex has artifacts but zero tabs. */
+export const WORKSPACE_TAB_ID = "__workspace__";
+
 export interface ConvexCanvasAdapter {
   adapter: CanvasDataAdapter;
   activeTabId: string | null;
   activeArtifactId: string | null;
-  /** False while the artifact list query is still resolving (`undefined`). */
   loaded: boolean;
-  /** Number of active artifacts — `0` means there is no live canvas data yet. */
   artifactCount: number;
 }
 
@@ -44,22 +39,10 @@ export function useConvexCanvasAdapter(): ConvexCanvasAdapter {
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
 
-  // Content of the active artifact only — the shell renders exactly one pane.
   const activeRead = useQuery(
     api.canvas.readArtifact,
     activeArtifactId ? { artifact_id: activeArtifactId } : "skip",
   );
-
-  // Default selection once data arrives: first tab, first artifact within it.
-  useEffect(() => {
-    if (!tabs || !artifacts) return;
-    if (activeTabId === null && tabs.length > 0) {
-      const firstTab = tabs[0]!;
-      setActiveTabId(firstTab.id);
-      const firstArt = artifacts.find((a) => a.tab_id === firstTab.id);
-      if (firstArt) setActiveArtifactId(firstArt.artifact_id);
-    }
-  }, [tabs, artifacts, activeTabId]);
 
   const changedMap = useMemo(() => {
     const m = new Map<string, boolean>();
@@ -67,22 +50,12 @@ export function useConvexCanvasAdapter(): ConvexCanvasAdapter {
     return m;
   }, [changes]);
 
-  const tabViews = useMemo<CanvasTabView[]>(() => {
-    const counts = changes?.tabChangedCounts ?? {};
-    return (tabs ?? []).map((t) => ({
-      id: t.id,
-      title: t.title,
-      order: t.order,
-      status: t.status,
-      changedCount: counts[t.id] ?? 0,
-    }));
-  }, [tabs, changes]);
-
   const artifactViews = useMemo<CanvasArtifactView[]>(
     () =>
       (artifacts ?? []).map((a) => ({
         id: a.artifact_id,
-        tabId: a.tab_id,
+        // Treat missing tab as workspace so orphans are visible.
+        tabId: a.tab_id ?? WORKSPACE_TAB_ID,
         type: a.type,
         title: a.title,
         status: a.status,
@@ -92,11 +65,61 @@ export function useConvexCanvasAdapter(): ConvexCanvasAdapter {
     [artifacts, changedMap],
   );
 
+  const tabViews = useMemo<CanvasTabView[]>(() => {
+    const counts = changes?.tabChangedCounts ?? {};
+    const real = (tabs ?? []).map((t) => ({
+      id: t.id,
+      title: t.title,
+      order: t.order,
+      status: t.status,
+      changedCount: counts[t.id] ?? 0,
+    }));
+    if (real.length > 0) return real;
+    // No tabs in Convex but we have artifacts → synthesize Workspace so the shell can select.
+    if (artifactViews.some((a) => a.status === "active")) {
+      return [
+        {
+          id: WORKSPACE_TAB_ID,
+          title: "Workspace",
+          order: 0,
+          status: "active" as const,
+          changedCount: artifactViews.filter((a) => a.changed).length,
+        },
+      ];
+    }
+    return [];
+  }, [tabs, changes, artifactViews]);
+
+  // Default selection once data arrives.
+  useEffect(() => {
+    if (artifacts === undefined || tabs === undefined) return;
+    const activeTabs = tabViews.filter((t) => t.status === "active");
+    if (activeTabId === null && activeTabs.length > 0) {
+      const firstTab = activeTabs[0]!;
+      setActiveTabId(firstTab.id);
+      const firstArt =
+        artifactViews.find((a) => a.status === "active" && a.tabId === firstTab.id) ??
+        artifactViews.find((a) => a.status === "active");
+      if (firstArt) setActiveArtifactId(firstArt.id);
+      return;
+    }
+    // Tab selected but no artifact yet (e.g. new orphans arrived).
+    if (activeTabId && activeArtifactId === null) {
+      const firstArt =
+        artifactViews.find((a) => a.status === "active" && a.tabId === activeTabId) ??
+        artifactViews.find((a) => a.status === "active");
+      if (firstArt) setActiveArtifactId(firstArt.id);
+    }
+  }, [tabs, artifacts, activeTabId, activeArtifactId, tabViews, artifactViews]);
+
   const selectTab = useCallback(
     (tabId: string) => {
       setActiveTabId(tabId);
-      const first = artifactViews.find((a) => a.tabId === tabId && a.status === "active");
+      const first =
+        artifactViews.find((a) => a.tabId === tabId && a.status === "active") ??
+        artifactViews.find((a) => a.status === "active");
       if (first) setActiveArtifactId(first.id);
+      else setActiveArtifactId(null);
     },
     [artifactViews],
   );
@@ -114,7 +137,6 @@ export function useConvexCanvasAdapter(): ConvexCanvasAdapter {
 
   const getArtifactContent = useCallback(
     (artifactId: string): ArtifactContentState => {
-      // Only the active artifact is subscribed; anything else is not yet loaded.
       if (artifactId !== activeArtifactId) return { status: "loading" };
       if (activeRead === undefined) return { status: "loading" };
       if (activeRead === null) return { status: "empty" };
@@ -138,13 +160,23 @@ export function useConvexCanvasAdapter(): ConvexCanvasAdapter {
   const adapter = useMemo<CanvasDataAdapter>(
     () => ({
       tabs: tabViews.filter((t) => t.status === "active"),
-      artifactsByTab: (tabId: string) =>
-        artifactViews.filter((a) => a.tabId === tabId && a.status === "active"),
+      artifactsByTab: (tabId: string) => {
+        const active = artifactViews.filter((a) => a.status === "active");
+        // Workspace / synthetic tab: include orphans + explicit workspace members.
+        if (tabId === WORKSPACE_TAB_ID) {
+          return active.filter((a) => !a.tabId || a.tabId === WORKSPACE_TAB_ID);
+        }
+        // Real tab: own artifacts + still show orphans so nothing is invisible.
+        const own = active.filter((a) => a.tabId === tabId);
+        const orphans = active.filter((a) => a.tabId === WORKSPACE_TAB_ID);
+        // If this is the only/first real tab, merge orphans so seed data is visible.
+        const realTabCount = tabViews.filter((t) => t.id !== WORKSPACE_TAB_ID && t.status === "active").length;
+        if (realTabCount <= 1) return [...own, ...orphans.filter((o) => !own.some((x) => x.id === o.id))];
+        return own.length > 0 ? own : orphans;
+      },
       getArtifactContent,
       markSeen,
       actions: {
-        // No public human mutation for tab lifecycle yet (agent-only internal
-        // mutations); honest no-ops, matching the demo adapter.
         createTab: () => {},
         renameTab: () => {},
         reorderTab: () => {},

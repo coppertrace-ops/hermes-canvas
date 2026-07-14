@@ -1,3 +1,4 @@
+import { internal } from "./_generated/api";
 import type {
   ArtifactRead,
   ArtifactSummary,
@@ -352,5 +353,13 @@ export const restoreArtifact = mutation({
     }
     await applyPlan(ctx, plan);
     return { ok: true, result: plan.result };
+  },
+});
+
+/** Bootstrap: Workspace tab + attach orphan artifacts (CLI / tooling). */
+export const ensureWorkspace = mutation({
+  args: {},
+  handler: async (ctx): Promise<{ tab_id: string; assigned: number }> => {
+    return await ctx.runMutation(internal.agentWrites.ensureWorkspace, {});
   },
 });

@@ -44,3 +44,6 @@ pnpm-debug.log*
 # Vercel
 .vercel/
 .vercel
+
+# Local Hermes agent research scratch (not source of truth)
+.hermes/

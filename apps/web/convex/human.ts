@@ -110,3 +110,20 @@ export const ackAllPendingHumanMessages = internalMutation({
     return { acked };
   },
 });
+
+/** Dev/E2E only: insert undelivered human for platform poller tests. */
+export const seedUndeliveredHuman = internalMutation({
+  args: { text: v.string() },
+  handler: async (ctx, args): Promise<{ message_id: string }> => {
+    const now = Date.now();
+    const seq = await appendEvent(ctx, { kind: "message", actor: "human", refs: {}, at: now });
+    const id = await ctx.db.insert("messages", {
+      role: "human",
+      body: args.text,
+      status: "complete",
+      event_seq: seq,
+      at: now,
+    });
+    return { message_id: id };
+  },
+});

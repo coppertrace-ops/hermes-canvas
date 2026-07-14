@@ -83,7 +83,10 @@ export function CanvasShell({
         onArchiveTab={actions.archiveTab}
       />
 
-      {artifacts.length > 1 && (
+      {/* Always show a picker when there is at least one artifact — previously
+          hidden until length > 1, so a single artifact (or orphans) left users
+          stuck on "No artifact selected" with no way to choose. */}
+      {artifacts.length > 0 && (
         <div className="hc-canvas__rail" role="tablist" aria-label="Artifacts in this tab">
           {artifacts.map((artifact) => (
             <button

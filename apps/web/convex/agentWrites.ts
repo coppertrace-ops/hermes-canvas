@@ -361,3 +361,41 @@ export const reportRun = internalMutation({
     return { ok: true };
   },
 });
+
+/** Ensure a Workspace tab exists and attach orphan artifacts to it. */
+export const ensureWorkspace = internalMutation({
+  args: {},
+  handler: async (ctx): Promise<{ tab_id: string; assigned: number }> => {
+    const now = Date.now();
+    const tabs = await ctx.db.query("tabs").collect();
+    const active = tabs
+      .filter((x) => x.status === "active")
+      .sort((a, b) => a.order - b.order);
+    let tabId: string;
+    if (active.length === 0) {
+      tabId = await ctx.db.insert("tabs", {
+        title: "Workspace",
+        order: 0,
+        status: "active",
+        created_at: now,
+      });
+      await appendEvent(ctx, {
+        kind: "tab_changed",
+        actor: "agent",
+        refs: { tab_id: tabId },
+        at: now,
+      });
+    } else {
+      tabId = active[0]!._id;
+    }
+    let assigned = 0;
+    const arts = await ctx.db.query("artifacts").collect();
+    for (const a of arts) {
+      if (a.status === "active" && !a.tab_id) {
+        await ctx.db.patch(a._id, { tab_id: tabId });
+        assigned += 1;
+      }
+    }
+    return { tab_id: tabId, assigned };
+  },
+});
