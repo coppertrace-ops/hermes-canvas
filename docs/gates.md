@@ -114,8 +114,38 @@ consumer broken):** `apps/content` shell → WP3, app `next.config.mjs` CSP → 
 script-src `'unsafe-inline'` concession is validated against the running app in WP4
 and will be documented in `docs/threat-model.md` (F7 posture note, not a relaxation).
 
-## WP3 — Content-origin app
-_pending_
+## WP3 — Content-origin app (`apps/content`)
+
+Branch: `wave2/wp3-content` (off `wave2/wp2-policy`).
+
+Completed the content shell (spec §2.2): `output:'export'` static export (no server
+code, no API routes, no cookies on this origin); `app/page.tsx` shell runtime that
+announces `ready`, accepts only `{type:'render',…}` from the app origin
+(`readRenderMessage`), injects HTML so inline scripts execute (external scripts dead
+at CSP `script-src 'self'`), reports `height`/`render_error`, and posts control
+messages up targeted at `APP_ORIGIN` exactly; `apps/content/vercel.json` headers on
+every path, **generated from `@hermes/policy`** by `gen-headers.ts` (tsx) and
+drift-guarded by `headers.test.ts`; `e2e/security/assert-headers.mjs` (WARDEN).
+
+| Criterion | Command | Date | Exit | Evidence |
+|---|---|---|---|---|
+| Static export build | `pnpm --filter @hermes/content build` | 2026-07-14 | 0 | `✓ Exporting (3/3)`; routes `/`, `/_not-found` static |
+| Content headers (local, exact CSP + nosniff on `/` and arbitrary path) | `node e2e/security/assert-headers.mjs --local` | 2026-07-14 | 0 | `✅ HEADER ASSERTIONS PASSED — 16 checks (--local)` |
+| Header drift guard (vercel.json === policy) | `pnpm --filter @hermes/content test` | 2026-07-14 | 0 | `headers.test.ts (4 tests)` — CSP === `buildContentCsp(APP_ORIGIN)`, nosniff present, applies to `/(.*)`, file === generator output |
+| Lint + typecheck + test (all pkgs) | `pnpm check` | 2026-07-14 | 0 | `28 successful, 28 total` |
+| Wave 1 smoke unaffected | `BASE_URL=http://localhost:3300 node e2e/browser-smoke.mjs` | 2026-07-14 | 0 | `✅ BROWSER SMOKE PASSED — 23 checks` |
+| Secrets scan | `pnpm check:secrets` | 2026-07-14 | 0 | `check-secrets: OK` |
+
+**Content CSP (applied every path):**
+`default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors https://hermes-canvas.vercel.app` + `X-Content-Type-Options: nosniff`.
+
+**⚠ Frank-gated (F1) — pending:** creating/linking the second Vercel project
+(`content`) and its first deploy. Local `--local` header parity stands in until then.
+After F1, run: `node e2e/security/assert-headers.mjs --url https://<content-host>`
+and record here. The committed `vercel.json` bakes `frame-ancestors` =
+`https://hermes-canvas.vercel.app` (default); if the real app origin differs, set
+`NEXT_PUBLIC_APP_ORIGIN`, re-run `pnpm --filter @hermes/content gen-headers`, and
+commit before deploy (F3).
 
 ## WP4 — App-origin CSP
 _pending_

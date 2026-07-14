@@ -29,15 +29,20 @@ Base commit at Wave 2 start: `7b8c543`.
 |---|---|---|---|
 | WP0 — baseline re-smoke + triage | `wave2/wp0-triage` | ✅ done | gates.md §WP0 (check 28/28, web 173, smoke 23, secrets OK). Fixed a real `check:secrets` false positive on a test fixture (auditable allowlist pragma); the original ledger's OK for it was inaccurate and is corrected. |
 | WP1 — feature flags | `wave2/wp1-flags` (off wp0-triage) | ✅ done | gates.md §WP1. `flags` table + `flag_changed` event (additive); owner-only `setFlag` + atomic audit; `useFlags()`; runbook §9. |
-| WP2 — `packages/policy` | `wave2/wp2-policy` | ▶ in progress | — |
-| WP3–WP11 | — | pending | — |
+| WP2 — `packages/policy` | `wave2/wp2-policy` | ✅ done | gates.md §WP2. Real CSP/sandbox/frame-protocol/sanitizer; 31 policy tests. |
+| WP3 — content origin | `wave2/wp3-content` | ✅ done (local) | gates.md §WP3. Static shell + runtime; vercel.json headers generated from policy; local header parity 16 checks. **First deploy F1-gated.** |
+| WP4 — app-origin CSP | `wave2/wp4-app-csp` | ▶ next | — |
+| WP5–WP11 | — | pending | — |
 
 **Flag states (implemented; all default-OFF, no prod flips yet):** `html_artifacts`=off, `boards`=off, `jobs_tab`=off. Flips are owner-only via `flags.setFlag`; prod flips are Frank-gated (F4).
 
 **Branch lineage:** WP0 baseline commits live on `wave2/wp0-triage`, not `main`. Subsequent WP branches are cut from that green baseline (main lacks it). Integration target: `wave2-integration`.
 
 ### Waiting on Frank (Wave 2)
-_None blocking yet._ Anticipated (from plan §3): **F1** create/link Vercel `content` project + first deploy (WP3) · **F2** prod Convex deploy + owner bootstrap (blocks `convex codegen` regen — WP1's generated `api.d.ts` was hand-edited as the offline equivalent) · **F3** prod deploys/env · **F4** prod flag flips · **F5** CI restore · **F7** any CSP/sandbox relaxation. Exact pending commands will be listed here as each WP reaches its Frank-gated step.
+- **F1 — create/link Vercel `content` project + first deploy (WP3).** Content app is built & locally header-verified. After deploy, run and record: `node e2e/security/assert-headers.mjs --url https://<content-host>`. If the prod app origin ≠ `https://hermes-canvas.vercel.app`, set `NEXT_PUBLIC_APP_ORIGIN=<app-origin>`, `pnpm --filter @hermes/content gen-headers`, commit `apps/content/vercel.json` first (F3).
+- **F2 — prod Convex deploy + owner bootstrap.** Also unblocks `npx convex codegen` (WP1's generated `apps/web/convex/_generated/api.d.ts` was hand-edited offline as the equivalent — regenerate identically once a deployment exists).
+
+Anticipated later: **F3** prod deploys/env · **F4** prod flag flips (one at a time, audit+smoke each) · **F5** CI restore (`workflow` OAuth scope) · **F6** payment/overage · **F7** any CSP/sandbox relaxation (needs threat-model amendment first) · **F8** hermes-box job tools.
 
 ---
 
