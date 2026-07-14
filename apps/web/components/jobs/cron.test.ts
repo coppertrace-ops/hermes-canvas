@@ -20,6 +20,17 @@ describe("parseCron", () => {
     expect(f?.dow.has(0)).toBe(true);
   });
 
+  it("keeps dow ranges that span 7 intact (0-7 = all days, not just Sunday)", () => {
+    const all = parseCron("0 0 * * 0-7");
+    expect(all?.dow.size).toBe(7); // 0..6 (7 folds to 0)
+    for (let d = 0; d <= 6; d++) expect(all?.dow.has(d)).toBe(true);
+    const monSun = parseCron("0 0 * * 1-7");
+    expect(monSun).not.toBeNull(); // was mangled to the invalid "1-0" before
+    expect(monSun?.dow.has(0)).toBe(true); // Sunday via 7
+    expect(monSun?.dow.has(1)).toBe(true);
+    expect(monSun?.dow.has(6)).toBe(true);
+  });
+
   it("rejects malformed / out-of-range expressions", () => {
     expect(parseCron("* * * *")).toBeNull(); // 4 fields
     expect(parseCron("60 * * * *")).toBeNull(); // minute 60

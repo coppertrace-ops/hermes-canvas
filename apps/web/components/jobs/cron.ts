@@ -31,7 +31,10 @@ const RANGES = {
   hour: [0, 23],
   dom: [1, 31],
   month: [1, 12],
-  dow: [0, 6],
+  // Day-of-week accepts 0-7 on input; both 0 and 7 mean Sunday (`foldSunday`
+  // normalizes 7 → 0 AFTER parsing, so ranges like `0-7` / `1-7` stay intact
+  // instead of being string-mangled into an invalid/lossy range).
+  dow: [0, 7],
 } as const;
 
 function parseField(field: string, [lo, hi]: readonly [number, number]): Set<number> | null {
@@ -72,9 +75,11 @@ export function parseCron(expr: string): CronFields | null {
   const hour = parseField(hrRaw, RANGES.hour);
   const dom = parseField(domRaw, RANGES.dom);
   const month = parseField(monRaw, RANGES.month);
-  // Accept dow 7 as Sunday (0), a common convention.
-  const dowSet = parseField(dowRaw.replace(/(^|[^0-9])7([^0-9]|$)/g, "$10$2"), RANGES.dow);
-  if (!minute || !hour || !dom || !month || !dowSet) return null;
+  const dowParsed = parseField(dowRaw, RANGES.dow);
+  if (!minute || !hour || !dom || !month || !dowParsed) return null;
+  // Fold 7 → 0 (both are Sunday) once the numeric set is known, so a range that
+  // spans 7 (e.g. `0-7`) keeps all its days instead of collapsing.
+  const dowSet = new Set([...dowParsed].map((d) => (d === 7 ? 0 : d)));
   return {
     minute,
     hour,
