@@ -4,7 +4,7 @@
  * Sandbox content shell (OWNER: WARDEN, spec §2.2).
  *
  * This page IS the sandboxed frame document. It runs at an OPAQUE origin (the app
- * embeds it with `sandbox="allow-scripts"`, never `allow-same-origin`), under the
+ * embeds it with `sandbox="allow-scripts"`, never same-origin), under the
  * content CSP that closes every egress channel. Its only job:
  *
  *   1. Announce `{type:'ready'}` to the parent once its listener is attached.

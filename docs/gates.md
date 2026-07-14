@@ -215,7 +215,40 @@ rule: never two auto-mounted live iframes).
 | Secrets scan | `pnpm check:secrets` | 2026-07-14 | 0 | `check-secrets: OK` |
 
 ## G5 — Sandboxed HTML security audit (WARDEN sole sign-off)
-_pending — `html_artifacts` flag stays OFF everywhere until this is green with evidence_
+
+Branch: `wave2-fable`. **Local audit GREEN** (deployed content-origin header assert
+is F1-gated — see below). `html_artifacts` stays OFF in prod until Frank flips it
+(F4), one flag at a time with audit + smoke.
+
+**Hostile-artifact egress suite** (`e2e/security/hostile-artifacts.mjs`): a real
+Chrome (playwright-core) drives the REAL content shell (built for the harness's
+local app origin) under the REAL `@hermes/policy` CSP (from `vercel.json` verbatim;
+only `frame-ancestors` retargeted to the local parent so the browser frames it —
+every egress directive byte-identical). The parent mounts the shell with
+`sandbox="allow-scripts"`, completes the true `ready`→`render` handshake, and posts
+a maximally hostile artifact. **Egress is asserted against a real local sentinel
+HTTP server** — a CSP/sandbox-blocked attempt never reaches it, so a recorded hit
+is unambiguous (unlike Playwright's `request` event, which also fires for
+CSP-blocked attempts; an earlier version of this suite used that and correctly
+flagged itself as unsound — fixed to the sentinel-server design).
+
+| Criterion | Command | Date | Exit | Evidence |
+|---|---|---|---|---|
+| Hostile artifact: zero egress (fetch/XHR/WS/SSE/beacon/`<img>`/CSS `url()`/`@font-face`/`<form>` POST/`prefetch`/`preload`/dynamic `<script src>`) + no nav/popup escape + tripwire rejects + inline script ran-then-blocked + CSP enforced | `node e2e/security/hostile-artifacts.mjs` | 2026-07-14 | 0 | `✅ HOSTILE-ARTIFACT SUITE PASSED — 7 checks; 0 egress leaks` |
+| Parent/shell protocol identity (source-identity ready, exact-origin shell check, whitelist, hostile synthesized events) | `pnpm --filter @hermes/policy test` + `pnpm --filter @hermes/web test` | 2026-07-14 | 0 | `frameProtocol.test.ts` 16 · `htmlFrameHost.test.ts` 16 (unit-level twin of the browser tripwire) |
+| `allow-same-origin` (+ other escape tokens) grep-guard over source | `node scripts/check-sandbox-grep.mjs` (`pnpm check:sandbox`) | 2026-07-14 | 0 | `check-sandbox-grep: OK — no forbidden sandbox tokens in source.` |
+| Content CSP + nosniff on every path (local parity, policy-exact) | `node e2e/security/assert-headers.mjs --local` | 2026-07-14 | 0 | `✅ HEADER ASSERTIONS PASSED — 16 checks (--local)` |
+| Render errors visible with source (never silent blank) | `pnpm --filter @hermes/web test` | 2026-07-14 | 0 | `htmlFrameHost.test.ts` render_error + timeout→unavailable states; `HtmlArtifactHost` shows message + raw `<pre>` source |
+| Lint + typecheck + test (all pkgs) | `pnpm check` | 2026-07-14 | 0 | `28 successful, 28 total` |
+
+**⚠ Frank-gated (F1) — deployed header assert pending:** after the `content` Vercel
+project is created/deployed, run `node e2e/security/assert-headers.mjs --url
+https://<content-host>` and record here. Until then local `--local` parity + the
+in-browser hostile suite (which serves the exact policy CSP) stand in.
+
+**WARDEN sign-off:** local G5 criteria met with evidence above; the ONE remaining
+item is the deployed-origin header assertion (infra, F1). Recommend `html_artifacts`
+prod flip only after that `--url` run is green.
 
 ## WP7 — Board UI + human board mutation
 _pending_
