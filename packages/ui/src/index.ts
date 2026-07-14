@@ -17,7 +17,7 @@ export * from "./tokens";
 export * from "./theme";
 
 // --- Primitives --------------------------------------------------------------
-export { Text, Heading } from "./components/Typography";
+export { Text } from "./components/Typography";
 export type { TextProps, TextSize, TextWeight, TextTone, TextAlign } from "./components/Typography";
 
 export { Button } from "./components/Button";
@@ -43,6 +43,9 @@ export type { PanelProps, PanelVariant, PanelPadding } from "./components/Panel"
 export { EmptyState } from "./components/EmptyState";
 export type { EmptyStateProps } from "./components/EmptyState";
 
+export { Input, Textarea } from "./components/Input";
+export type { InputProps, TextareaProps, InputSize } from "./components/Input";
+
 export { AppShell } from "./components/AppShell";
 export type { AppShellProps } from "./components/AppShell";
 
@@ -50,4 +53,14 @@ export { ThemeToggle } from "./components/ThemeToggle";
 export type { ThemeToggleProps } from "./components/ThemeToggle";
 
 // --- Icons (self-contained default set; consumers may supply their own) -------
-export { SunIcon, MoonIcon, MonitorIcon, InboxIcon } from "./components/icons";
+export {
+  SunIcon,
+  MoonIcon,
+  MonitorIcon,
+  InboxIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PencilIcon,
+  CloseIcon,
+  PlusIcon,
+} from "./components/icons";

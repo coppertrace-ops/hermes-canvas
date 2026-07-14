@@ -119,6 +119,40 @@ describe("G1: oversize — structured rejection + limit_rejected event, never tr
   });
 });
 
+describe("G1: rejection events carry the true error code (semantic fidelity)", () => {
+  it("labels a real limit breach with rejected_code 'oversize'", () => {
+    const core = new CanvasCore({ now: () => 1000 });
+    const big = "x".repeat(LIMITS.VERSION_CONTENT_BYTES + 1);
+    try {
+      core.createArtifact({ type: "markdown", title: "Big", content: big, why: "too big" });
+    } catch {
+      /* expected */
+    }
+    const rejects = core.getEvents().filter((e) => e.kind === "limit_rejected");
+    expect(rejects).toHaveLength(1);
+    // The frozen kind is a coarse bucket; the payload carries the precise cause.
+    expect(rejects[0]!.refs.rejected_code).toBe("oversize");
+  });
+
+  it("distinguishes a non-limit refusal (validation_failed) from an actual limit hit", () => {
+    const core = new CanvasCore({ now: () => 1000 });
+    const { artifact_id } = mkMarkdown(core, "Doc", "# H\n\nbody");
+    // A region edit citing a parent_seq that does not exist is a validation
+    // refusal, not a limit breach — but it is still recorded as evidence.
+    expect(() =>
+      core.updateArtifact(artifact_id, {
+        parent_seq: 999,
+        why: "edit against a missing parent",
+        edit: { mode: "region", anchor: { heading: "H" }, content: "x" },
+      }),
+    ).toThrowError(CanvasError);
+    const rejects = core.getEvents().filter((e) => e.kind === "limit_rejected");
+    expect(rejects).toHaveLength(1);
+    // Same coarse kind, but the code makes clear no *limit* was breached.
+    expect(rejects[0]!.refs.rejected_code).toBe("validation_failed");
+  });
+});
+
 describe("G1: restore appends a new version equal to an old one", () => {
   it("restore adds a version whose content matches the source and op=restore", () => {
     const core = new CanvasCore({ now: () => 1000 });

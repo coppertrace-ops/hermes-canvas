@@ -54,6 +54,14 @@ npx convex env remove OWNER_BOOTSTRAP_SECRET
 With the secret gone the sign-up flow is refused forever: the owner account cannot
 be re-created or hijacked. Only `flow: "signIn"` works from now on.
 
+> IMPORTANT — unset `OWNER_BOOTSTRAP_SECRET` after the first sign-up. It is a
+> one-time value; leaving it set in production is the one config mistake that
+> re-opens account creation. As belt-and-braces, `convex/authPolicy.ts`
+> (`assertBootstrapAllowed`) refuses a production `signUp` whenever the secret is
+> still set and an owner account already exists, and Convex Auth's own
+> `createAccount` rejects a duplicate owner account — but removing the secret is
+> the primary control, not the fallback.
+
 ## 5. Verify (Gate G0 auth acceptance)
 
 - Signing in as `OWNER_EMAIL` reaches the workspace.

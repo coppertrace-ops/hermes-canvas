@@ -59,28 +59,3 @@ export function Text({
   );
 }
 
-const HEADING_SIZE: Record<1 | 2 | 3 | 4, TextSize> = {
-  1: "2xl",
-  2: "xl",
-  3: "lg",
-  4: "md",
-};
-
-interface HeadingProps extends Omit<TextProps, "as" | "size" | "weight"> {
-  /** Semantic level 1–4, also selecting a default size. */
-  level?: 1 | 2 | 3 | 4;
-  size?: TextSize;
-  weight?: TextWeight;
-}
-
-/** Headings — semantic `h1`–`h4` with a tightened, restrained default scale. */
-export function Heading({ level = 2, size, weight = "semibold", ...rest }: HeadingProps) {
-  return (
-    <Text
-      as={`h${level}` as ElementType}
-      size={size ?? HEADING_SIZE[level]}
-      weight={weight}
-      {...rest}
-    />
-  );
-}

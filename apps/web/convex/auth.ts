@@ -27,6 +27,15 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       // Runs for every flow before credential logic: rejects non-owner emails
       // (allowlist-of-one) and refuses sign-up without the one-time bootstrap
       // secret. See authPolicy.ts for the rules and tests.
+      //
+      // NOTE: `@convex-dev/auth` consumes this callback's result SYNCHRONOUSLY
+      // (`const { email } = config.profile(...)`), so it cannot do the async
+      // `users`-table read that `assertBootstrapAllowed`'s `ownerExists` guard
+      // wants. The live protection against re-creating the owner is Convex Auth's
+      // own `createAccount`, which rejects a duplicate account for the owner email
+      // on `signUp`; the operational rule (unset OWNER_BOOTSTRAP_SECRET after
+      // bootstrap, docs/runbook.md) is the primary control. The `ownerExists`
+      // branch is defense-in-depth for any caller that CAN supply the signal.
       profile: (params) => ownerProfile(params),
     }),
   ],

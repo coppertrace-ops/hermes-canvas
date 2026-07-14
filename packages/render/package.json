@@ -2,7 +2,7 @@
   "name": "@hermes/render",
   "version": "0.1.0",
   "private": true,
-  "description": "Canvas artifact renderers + shell primitives — safe Markdown (no raw HTML), strict Mermaid, resizable split pane, changed badge, artifact empty/loading/error states, and the canvas data-adapter interface. OWNED BY PANES (plan §7). Consumes @hermes/policy, @hermes/contract, @hermes/ui.",
+  "description": "Canvas artifact renderers + shell primitives — safe Markdown (no raw HTML), strict Mermaid, resizable split pane, changed badge, artifact empty/loading/error states, and the canvas data-adapter interface. OWNED BY PANES (plan §7). Consumes @hermes/contract, @hermes/ui.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@hermes/contract": "workspace:*",
-    "@hermes/policy": "workspace:*",
     "@hermes/ui": "workspace:*",
     "mermaid": "^11.4.1"
   },

@@ -1,5 +1,5 @@
-import { aggregateTabChanged, isArtifactChanged, nextLastSeen } from "../../../packages/diff/src/changed";
-import type { HasHead } from "../../../packages/diff/src/changed";
+import { aggregateTabChanged, isArtifactChanged, nextLastSeen } from "@hermes/diff";
+import type { HasHead } from "@hermes/diff";
 import { v } from "convex/values";
 import { requireOwner } from "./authGuard";
 import { mutation, query, type MutationCtx } from "./_generated/server";
@@ -19,12 +19,11 @@ import { mutation, query, type MutationCtx } from "./_generated/server";
  * non-`/agent/*` surface); they never touch the append-only `versions`/`events`
  * tables, only the owner's private `last_seen` cursor.
  *
- * AUTH: `markSeen` is a browser-only mutation (not wired into `/agent/*`), so it
- * `requireOwner`s at its top — an anonymous/non-owner caller cannot advance the
- * owner's cursor. `getLastSeen` and `listArtifactChanges` are browser-only READ
- * queries; per the scope of this owner-write pass they are left un-guarded (they
- * expose only the single owner's own last-seen cursor and changed flags — no
- * cross-tenant data exists in this single-owner deployment).
+ * AUTH: both functions here are browser-only (not wired into `/agent/*`) and so
+ * `requireOwner` at their top. `markSeen` protects the owner's cursor from an
+ * anonymous advance; `listArtifactChanges` is guarded too — the Convex public API
+ * is reachable by anyone with the deployment URL, so even single-owner reads must
+ * not be world-readable.
  */
 
 /**
@@ -64,17 +63,6 @@ export const markSeen = mutation({
   },
 });
 
-/** The full last-seen map (artifact_id → seq). Live-queried by the badge adapter. */
-export const getLastSeen = query({
-  args: {},
-  handler: async (ctx): Promise<Record<string, number>> => {
-    const rows = await ctx.db.query("last_seen").collect();
-    const map: Record<string, number> = {};
-    for (const r of rows) map[r.artifact_id] = r.seq;
-    return map;
-  },
-});
-
 export interface ArtifactChange {
   artifact_id: string;
   tab_id?: string;
@@ -99,6 +87,7 @@ export const listArtifactChanges = query({
     tabChangedCounts: Record<string, number>;
     totalChanged: number;
   }> => {
+    await requireOwner(ctx);
     const docs = await ctx.db.query("artifacts").collect();
     const active = docs.filter((d) => args.include_archived || d.status === "active");
     const seenRows = await ctx.db.query("last_seen").collect();

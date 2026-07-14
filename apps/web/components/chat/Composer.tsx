@@ -29,6 +29,30 @@ import type { AttachmentView } from "./types";
 let localCounter = 0;
 const localId = () => `local_${(localCounter += 1)}`;
 
+/** sessionStorage key for the unsent draft, restored across reloads within a tab. */
+const DRAFT_KEY = "hermes.chat.draft";
+/** Max auto-grow height (~8 lines) before the textarea scrolls internally. */
+const MAX_TEXTAREA_PX = 192;
+
+function readDraft(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.sessionStorage.getItem(DRAFT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeDraft(value: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (value) window.sessionStorage.setItem(DRAFT_KEY, value);
+    else window.sessionStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // Private-mode / quota — a lost draft is acceptable; never throw on keystroke.
+  }
+}
+
 const bar: CSSProperties = {
   display: "flex",
   flexDirection: "column",
@@ -49,10 +73,54 @@ export function Composer({ placeholder = "Message Hermes…", disabled = false }
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<AttachmentView[]>([]);
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   // Side-channel maps that must not trigger re-renders.
   const handles = useRef(new Map<string, UploadHandle>());
   const files = useRef(new Map<string, File>());
   const previews = useRef(new Map<string, string>());
+  /**
+   * Local attachment id → the server attachment id the backend returns once the
+   * upload binds. The chip keeps its stable local id (so its preview URL, retry,
+   * and removal all keep working); the SEND must reference the server id, which is
+   * what `human.sendMessage` validates against the attachments table.
+   */
+  const readyServerIds = useRef(new Map<string, string>());
+
+  /** Reset then grow the textarea to fit its content, clamped to the max height. */
+  const autoGrow = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const next = Math.min(el.scrollHeight, MAX_TEXTAREA_PX);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > MAX_TEXTAREA_PX ? "auto" : "hidden";
+  }, []);
+
+  const updateText = useCallback(
+    (value: string) => {
+      setText(value);
+      writeDraft(value);
+    },
+    [],
+  );
+
+  // Restore any persisted draft, size the box to it, and focus on mount.
+  useEffect(() => {
+    const saved = readDraft();
+    if (saved) setText(saved);
+    const el = textareaRef.current;
+    if (el) {
+      el.focus();
+      // Grow to the restored content after the value has painted.
+      requestAnimationFrame(autoGrow);
+    }
+  }, []);
+
+  // Keep the box sized to the current text (covers programmatic setText too).
+  useEffect(() => {
+    autoGrow();
+  }, [text, autoGrow]);
 
   const patch = useCallback((id: string, next: Partial<AttachmentView>) => {
     setAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, ...next } : a)));
@@ -74,7 +142,10 @@ export function Composer({ placeholder = "Message Hermes…", disabled = false }
       });
       handles.current.set(id, handle);
       handle.done
-        .then(() => patch(id, { status: "ready", progress: 1 }))
+        .then((ready) => {
+          readyServerIds.current.set(id, ready.id);
+          patch(id, { status: "ready", progress: 1 });
+        })
         .catch((err: unknown) => {
           if (err instanceof Error && err.message === "cancelled") return;
           patch(id, {
@@ -134,6 +205,7 @@ export function Composer({ placeholder = "Message Hermes…", disabled = false }
       handles.current.get(id)?.cancel();
       handles.current.delete(id);
       files.current.delete(id);
+      readyServerIds.current.delete(id);
       revokePreview(id);
       setAttachments((prev) => prev.filter((a) => a.id !== id));
     },
@@ -154,7 +226,9 @@ export function Composer({ placeholder = "Message Hermes…", disabled = false }
     for (const id of previews.current.keys()) revokePreview(id);
     handles.current.clear();
     files.current.clear();
+    readyServerIds.current.clear();
     setText("");
+    writeDraft("");
     setAttachments([]);
   }, [revokePreview]);
 
@@ -162,9 +236,15 @@ export function Composer({ placeholder = "Message Hermes…", disabled = false }
 
   const handleSend = useCallback(() => {
     if (!canSend) return;
-    const attachmentIds = attachments.filter((a) => a.status === "ready").map((a) => a.id);
+    // Send the SERVER attachment ids (what the backend bound), falling back to the
+    // local id only for backends that treat them as one and the same (the mock).
+    const attachmentIds = attachments
+      .filter((a) => a.status === "ready")
+      .map((a) => readyServerIds.current.get(a.id) ?? a.id);
     void backend.send({ text: text.trim(), attachmentIds });
     reset();
+    // Return focus so a rapid back-and-forth never requires reaching for the mouse.
+    textareaRef.current?.focus();
   }, [attachments, backend, canSend, reset, text]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -202,8 +282,9 @@ export function Composer({ placeholder = "Message Hermes…", disabled = false }
         <AttachmentPicker onPick={handlePicked} onReject={handleRejected} disabled={disabled} />
 
         <textarea
+          ref={textareaRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => updateText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
@@ -213,7 +294,8 @@ export function Composer({ placeholder = "Message Hermes…", disabled = false }
             flex: 1,
             resize: "none",
             minHeight: "2.5rem",
-            maxHeight: "12rem",
+            maxHeight: `${MAX_TEXTAREA_PX}px`,
+            overflowY: "hidden",
             padding: "var(--hc-space-2) var(--hc-space-3)",
             borderRadius: "var(--hc-radius-md)",
             border: "var(--hc-border-width) solid var(--hc-border)",

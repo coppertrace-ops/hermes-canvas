@@ -19,8 +19,8 @@ import { appendEvent } from "./lib/store";
  *
  * It deliberately does NOT synthesize an assistant reply — a human send creates a
  * pending user turn, nothing more. Listing the resulting thread is the existing
- * public `canvas.getUpdates` live query; there is no second read path to keep in
- * sync.
+ * public chat queries (`canvas.listRecentMessages` / `listMessagesBefore`); there
+ * is no second read path to keep in sync.
  *
  * AUTH: this is a browser-only mutation (it is NOT wired into the `/agent/*` HTTP
  * router — the agent posts through `internal.agentWrites.postMessage` instead), so
@@ -29,7 +29,17 @@ import { appendEvent } from "./lib/store";
  * non-production. A non-owner or anonymous caller is rejected before any write.
  */
 export const sendMessage = mutation({
-  args: { text: v.string(), turn_id: v.optional(v.string()) },
+  args: {
+    text: v.string(),
+    turn_id: v.optional(v.string()),
+    /**
+     * Ids of attachments (from `files.bindAttachment`) to bind to this message.
+     * Optional — existing text-only callers are untouched. Each id must resolve to
+     * an owner (`uploaded_by: "human"`) attachment row or the whole send is
+     * rejected, so a message can never reference a dangling or agent-owned blob.
+     */
+    attachments: v.optional(v.array(v.string())),
+  },
   handler: async (
     ctx,
     args,
@@ -58,6 +68,30 @@ export const sendMessage = mutation({
       return out as { ok: false; error: ReturnType<typeof CanvasError.oversize>["error"] };
     }
 
+    // Resolve + authorize each attachment before the write. An unknown id, a
+    // malformed id, or an agent-owned blob rejects the whole send (structured
+    // error, recorded as evidence like every other refusal on this surface).
+    let attachmentIds: string[] | undefined;
+    if (args.attachments !== undefined && args.attachments.length > 0) {
+      const resolved: string[] = [];
+      for (const raw of args.attachments) {
+        const id = ctx.db.normalizeId("attachments", raw);
+        const doc = id ? await ctx.db.get(id) : null;
+        if (!doc || doc.uploaded_by !== "human") {
+          const out = await reject(
+            ctx,
+            CanvasError.validation(`unknown or unauthorized attachment ${raw}`),
+            "human",
+            {},
+            now,
+          );
+          return out as { ok: false; error: ReturnType<typeof CanvasError.oversize>["error"] };
+        }
+        resolved.push(raw);
+      }
+      attachmentIds = resolved;
+    }
+
     const seq = await appendEvent(ctx, { kind: "message", actor: "human", refs: {}, at: now });
     const id = await ctx.db.insert("messages", {
       role: "human",
@@ -66,6 +100,7 @@ export const sendMessage = mutation({
       turn_id: args.turn_id,
       event_seq: seq,
       at: now,
+      ...(attachmentIds ? { attachments: attachmentIds } : {}),
     });
     return { ok: true, message_id: id };
   },
@@ -92,38 +127,3 @@ export const ackHumanMessages = internalMutation({
   },
 });
 
-/**
- * One-shot: mark ALL existing undelivered human messages as delivered.
- * Used after the redelivery bug so historical chat noise does not re-enter Telegram.
- */
-export const ackAllPendingHumanMessages = internalMutation({
-  args: {},
-  handler: async (ctx): Promise<{ acked: number }> => {
-    const now = Date.now();
-    const docs = await ctx.db.query("messages").collect();
-    let acked = 0;
-    for (const doc of docs) {
-      if (doc.role !== "human" || doc.agent_delivered_at !== undefined) continue;
-      await ctx.db.patch(doc._id, { agent_delivered_at: now });
-      acked += 1;
-    }
-    return { acked };
-  },
-});
-
-/** Dev/E2E only: insert undelivered human for platform poller tests. */
-export const seedUndeliveredHuman = internalMutation({
-  args: { text: v.string() },
-  handler: async (ctx, args): Promise<{ message_id: string }> => {
-    const now = Date.now();
-    const seq = await appendEvent(ctx, { kind: "message", actor: "human", refs: {}, at: now });
-    const id = await ctx.db.insert("messages", {
-      role: "human",
-      body: args.text,
-      status: "complete",
-      event_seq: seq,
-      at: now,
-    });
-    return { message_id: id };
-  },
-});

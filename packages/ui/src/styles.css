@@ -5,8 +5,11 @@
  *   import "@hermes/ui/styles.css";
  *
  * Order matters: tokens define the variables, base consumes them for element
- * defaults, components consume them for class rules.
+ * defaults, components consume them for primitive class rules, and canvas covers
+ * the composed content surfaces (Markdown prose, split handle, artifact states,
+ * Mermaid, tab bar, artifact rail) that @hermes/render + apps/web reference.
  */
 @import "./styles/tokens.css";
 @import "./styles/base.css";
 @import "./styles/components.css";
+@import "./styles/canvas.css";

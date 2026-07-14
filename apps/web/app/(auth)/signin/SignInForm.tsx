@@ -14,14 +14,16 @@
  *    refused. This is not a public sign-up — it cannot succeed without the secret.
  *
  * The frontend is not the trust boundary: it only collects credentials and shows
- * the server's verdict. Styling uses GLASS design tokens (globals.css) for a
- * restrained, neutral surface consistent with the rest of the app.
+ * the server's verdict. Presentation uses the GLASS design system — the shared
+ * `Input`/`Button` primitives and design tokens — for a restrained, neutral
+ * surface consistent with the rest of the app.
  */
 
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
+import { Button, Input } from "@hermes/ui";
 
 type Status = "idle" | "submitting" | "error";
 
@@ -47,6 +49,9 @@ export function SignInForm() {
   const [secret, setSecret] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  const submitting = status === "submitting";
+  const invalid = status === "error";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -80,13 +85,13 @@ export function SignInForm() {
 
         <label style={labelStyle}>
           <span>Email</span>
-          <input
-            style={inputStyle}
+          <Input
             type="email"
             name="email"
             autoComplete="username"
             autoFocus
             required
+            invalid={invalid}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -94,12 +99,12 @@ export function SignInForm() {
 
         <label style={labelStyle}>
           <span>Password</span>
-          <input
-            style={inputStyle}
+          <Input
             type="password"
             name="password"
             autoComplete={isBootstrap ? "new-password" : "current-password"}
             required
+            invalid={invalid}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
@@ -108,12 +113,12 @@ export function SignInForm() {
         {isBootstrap && (
           <label style={labelStyle}>
             <span>Bootstrap secret</span>
-            <input
-              style={inputStyle}
+            <Input
               type="password"
               name="secret"
               autoComplete="off"
               required
+              invalid={invalid}
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
             />
@@ -126,9 +131,9 @@ export function SignInForm() {
           </p>
         )}
 
-        <button style={buttonStyle} type="submit" disabled={status === "submitting"}>
-          {status === "submitting" ? "Working…" : isBootstrap ? "Create owner account" : "Sign in"}
-        </button>
+        <Button type="submit" variant="primary" block loading={submitting}>
+          {submitting ? "Working…" : isBootstrap ? "Create owner account" : "Sign in"}
+        </Button>
 
         <p style={hintStyle}>
           {isBootstrap ? (
@@ -151,7 +156,7 @@ const pageStyle: CSSProperties = {
   display: "grid",
   placeItems: "center",
   padding: "var(--hc-space-4)",
-  background: "var(--hc-surface)",
+  background: "var(--hc-bg)",
   color: "var(--hc-text)",
 };
 
@@ -159,17 +164,17 @@ const cardStyle: CSSProperties = {
   width: "min(360px, 100%)",
   display: "grid",
   gap: "var(--hc-space-3)",
-  padding: "var(--hc-space-4)",
-  background: "var(--hc-surface-2)",
+  padding: "var(--hc-space-6)",
+  background: "var(--hc-surface)",
   border: "var(--hc-border-width) solid var(--hc-border)",
   borderRadius: "var(--hc-radius-lg)",
-  boxShadow: "var(--hc-shadow-sm)",
+  boxShadow: "var(--hc-shadow-md)",
 };
 
 const titleStyle: CSSProperties = {
   margin: 0,
-  fontSize: "1.25rem",
-  fontWeight: "var(--hc-font-weight-semibold)" as unknown as number,
+  fontSize: "var(--hc-font-size-lg)",
+  fontWeight: "var(--hc-weight-semibold)" as unknown as number,
   letterSpacing: "var(--hc-tracking-tight)",
 };
 
@@ -177,43 +182,21 @@ const subtitleStyle: CSSProperties = {
   margin: 0,
   fontSize: "var(--hc-font-size-sm)",
   color: "var(--hc-text-secondary)",
+  lineHeight: "var(--hc-line-normal)",
 };
 
 const labelStyle: CSSProperties = {
   display: "grid",
   gap: "var(--hc-space-2)",
   fontSize: "var(--hc-font-size-sm)",
-  fontWeight: "var(--hc-font-weight-medium)" as unknown as number,
+  fontWeight: "var(--hc-weight-medium)" as unknown as number,
   color: "var(--hc-text-secondary)",
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "0.5rem 0.625rem",
-  fontSize: "0.9375rem",
-  color: "var(--hc-text)",
-  background: "var(--hc-surface)",
-  border: "var(--hc-border-width) solid var(--hc-border)",
-  borderRadius: "var(--hc-radius-md)",
-  outlineColor: "var(--hc-accent)",
-};
-
-const buttonStyle: CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  fontSize: "0.9375rem",
-  fontWeight: "var(--hc-font-weight-medium)" as unknown as number,
-  color: "var(--hc-accent-contrast)",
-  background: "var(--hc-accent)",
-  border: "none",
-  borderRadius: "var(--hc-radius-md)",
-  cursor: "pointer",
-  transition: "opacity var(--hc-duration-fast) var(--hc-ease-out)",
 };
 
 const errorStyle: CSSProperties = {
   margin: 0,
   fontSize: "var(--hc-font-size-sm)",
-  color: "var(--hc-warning)",
+  color: "var(--hc-danger)",
 };
 
 const hintStyle: CSSProperties = {

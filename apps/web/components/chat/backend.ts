@@ -65,4 +65,13 @@ export interface ChatBackend {
    * added. Optional — mock backends without history paging may omit it.
    */
   loadOlder?(): Promise<boolean>;
+  /**
+   * Download a committed attachment's bytes to the user's machine, given its
+   * server attachment id and display name. Optional: only a backend that can
+   * authenticate the download (the live Convex adapter) implements it — the bytes
+   * are owner-guarded, so a plain `<a href>` cannot fetch them; the adapter fetches
+   * with the owner's auth token and triggers the save. When omitted (mock/demo,
+   * no synthetic bytes exist), the UI shows no download affordance.
+   */
+  downloadAttachment?(id: string, name: string): Promise<void>;
 }

@@ -31,5 +31,12 @@ export const eventRefsSchema = z.object({
   job_key: z.string().optional(),
   version_seq: z.number().int().nonnegative().optional(),
   tab_id: z.string().optional(),
+  /**
+   * On a rejection event, the true `ApiError.code` that caused the refusal
+   * (`oversize`, `not_found`, `validation_failed`, …). The frozen `limit_rejected`
+   * kind is a coarse bucket; this field carries the exact reason so machine
+   * consumers can branch without the label overstating that a *limit* was hit.
+   */
+  rejected_code: z.string().optional(),
 });
 export type EventRefs = z.infer<typeof eventRefsSchema>;

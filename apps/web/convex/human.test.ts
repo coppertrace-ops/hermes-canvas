@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { MutationCtx } from "./_generated/server";
 import schema from "./schema";
 
 /**
@@ -80,13 +81,90 @@ describe("pending work visibility", () => {
       role: "agent",
     });
 
-    const pending = await t.query(api.canvas.pendingWork, { cursor: 0 });
+    const pending = await t.query(internal.canvas.pendingWork, { cursor: 0 });
     expect(pending.messages).toHaveLength(1);
     expect(pending.messages[0]!.role).toBe("human");
     expect(pending.messages[0]!.body).toBe("Human asks a question.");
 
-    // The full feed still contains both messages — pendingWork only filters.
-    const updates = await t.query(api.canvas.getUpdates, { cursor: 0 });
-    expect(updates.messages).toHaveLength(2);
+    // The full transcript still contains both messages — pendingWork only filters.
+    const recent = await t.query(api.canvas.listRecentMessages, {});
+    expect(recent.messages).toHaveLength(2);
+  });
+});
+
+describe("sendMessage attachments", () => {
+  /**
+   * Seed a bound attachment row directly on the given backend (`bindAttachment`
+   * needs a real uploaded blob, which convex-test storage doesn't mint here).
+   */
+  function seedAttachment(
+    t: { run: <T>(fn: (ctx: MutationCtx) => Promise<T>) => Promise<T> },
+    uploadedBy: "human" | "agent" = "human",
+  ): Promise<string> {
+    return t.run((ctx) =>
+      ctx.db.insert("attachments", {
+        file_id: "kg_fake_storage_id",
+        name: "diagram.png",
+        mime: "image/png",
+        size: 1234,
+        sha256: "abc123",
+        uploaded_by: uploadedBy,
+        at: Date.now(),
+      }),
+    );
+  }
+
+  it("binds a valid owner attachment and the transcript returns it", async () => {
+    const t = convexTest(schema, modules).withIdentity(OWNER);
+    const attachmentId = await seedAttachment(t);
+
+    const res = await t.mutation(api.human.sendMessage, {
+      text: "see attached",
+      attachments: [attachmentId],
+    });
+    expect(res.ok).toBe(true);
+
+    const stored = await t.run((ctx) => ctx.db.query("messages").collect());
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.attachments).toEqual([attachmentId]);
+
+    // The read path the UI subscribes to surfaces the attachment ids.
+    const recent = await t.query(api.canvas.listRecentMessages, {});
+    expect(recent.messages).toHaveLength(1);
+    expect(recent.messages[0]!.attachments).toEqual([attachmentId]);
+  });
+
+  it("rejects an unknown attachment id and writes no message", async () => {
+    const t = convexTest(schema, modules).withIdentity(OWNER);
+    const res = await t.mutation(api.human.sendMessage, {
+      text: "bad ref",
+      attachments: ["att_does_not_exist"],
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("validation_failed");
+
+    const stored = await t.run((ctx) => ctx.db.query("messages").collect());
+    expect(stored).toHaveLength(0);
+  });
+
+  it("rejects an agent-owned attachment on the human send path", async () => {
+    const t = convexTest(schema, modules).withIdentity(OWNER);
+    const agentAttachment = await seedAttachment(t, "agent");
+    const res = await t.mutation(api.human.sendMessage, {
+      text: "not mine",
+      attachments: [agentAttachment],
+    });
+    expect(res.ok).toBe(false);
+    const stored = await t.run((ctx) => ctx.db.query("messages").collect());
+    expect(stored).toHaveLength(0);
+  });
+
+  it("leaves text-only sends unchanged (no attachments field)", async () => {
+    const t = convexTest(schema, modules).withIdentity(OWNER);
+    const res = await t.mutation(api.human.sendMessage, { text: "plain" });
+    expect(res.ok).toBe(true);
+    const stored = await t.run((ctx) => ctx.db.query("messages").collect());
+    expect(stored[0]!.attachments).toBeUndefined();
   });
 });

@@ -7,20 +7,22 @@ import schema from "./schema";
 /**
  * Owner-authorization surface tests (OWNER: WARDEN, plan §6).
  *
- * The auth implementation created `requireOwner` but did not apply it to the
- * browser-only writes. This suite proves the applied boundary end-to-end against a
- * real in-memory Convex backend:
+ * Proves the applied boundary end-to-end against a real in-memory Convex backend:
  *
  *   1. ANONYMOUS / non-owner browser writes REJECT — every browser-only mutation
  *      (`human.sendMessage`, `canvas.restoreArtifact`, `lastSeen.markSeen`,
  *      `metrics.recordEvent`) throws before it can touch the database.
- *   2. The signed-in OWNER succeeds — the same calls carrying an identity resolve.
+ *   2. ANONYMOUS browser READS REJECT — the Convex public API is world-reachable,
+ *      so the browser-facing read queries (`canvas.listArtifacts` / `readArtifact`
+ *      / `listTabs` / `getUpdates`, `lastSeen.*`, `metrics.*`) throw without an
+ *      identity, and the signed-in OWNER is let through.
+ *   3. The signed-in OWNER succeeds — the same calls carrying an identity resolve.
  *      (Convex Auth's allowlist-of-one means a present identity IS the owner; the
  *      guard's job is to require that an identity exists at all.)
- *   3. The AGENT internal path stays usable — the `internal.agentWrites.*`
- *      mutations and the dual-use read queries the `/agent/*` HTTP layer reaches via
- *      `ctx.runQuery` are NOT owner-guarded (no user identity exists on the
- *      service-token path), so they still run un-authenticated.
+ *   4. The AGENT service-token path stays usable — the `internal.agentWrites.*`
+ *      mutations and the `internal.canvas.*ForAgent` / `pendingWork` internal read
+ *      queries the `/agent/*` HTTP layer reaches via `ctx.runQuery` run without a
+ *      user identity (an internal function is not reachable over the public API).
  *
  * The anonymous-reject assertions depend on the demo bypass being OFF; we pin the
  * env so the result is independent of the ambient shell (the bypass is honored only
@@ -128,6 +130,55 @@ describe("the signed-in owner is permitted through every browser-only write", ()
   });
 });
 
+describe("browser read queries reject an anonymous / non-owner caller", () => {
+  it("canvas.listArtifacts throws unauthorized without an identity", async () => {
+    const t = convexTest(schema, modules);
+    await seedArtifact(t);
+    await expect(t.query(api.canvas.listArtifacts, {})).rejects.toThrow(UNAUTHORIZED);
+  });
+
+  it("canvas.readArtifact throws unauthorized without an identity", async () => {
+    const t = convexTest(schema, modules);
+    const artifactId = await seedArtifact(t);
+    await expect(
+      t.query(api.canvas.readArtifact, { artifact_id: artifactId }),
+    ).rejects.toThrow(UNAUTHORIZED);
+  });
+
+  it("canvas.listTabs / listRecentEvents throw unauthorized without an identity", async () => {
+    const t = convexTest(schema, modules);
+    await expect(t.query(api.canvas.listTabs, {})).rejects.toThrow(UNAUTHORIZED);
+    await expect(t.query(api.canvas.listRecentEvents, {})).rejects.toThrow(UNAUTHORIZED);
+  });
+
+  it("lastSeen and metrics read queries throw unauthorized without an identity", async () => {
+    const t = convexTest(schema, modules);
+    await expect(t.query(api.lastSeen.listArtifactChanges, {})).rejects.toThrow(UNAUTHORIZED);
+    await expect(t.query(api.metrics.readershipSummary, {})).rejects.toThrow(UNAUTHORIZED);
+    await expect(t.query(api.metrics.listEvents, {})).rejects.toThrow(UNAUTHORIZED);
+  });
+});
+
+describe("the signed-in owner is permitted through the browser read queries", () => {
+  it("canvas.listArtifacts / readArtifact return data for the owner", async () => {
+    const t = convexTest(schema, modules);
+    const artifactId = await seedArtifact(t);
+    const asOwner = t.withIdentity(OWNER);
+    const artifacts = await asOwner.query(api.canvas.listArtifacts, {});
+    expect(artifacts.length).toBe(1);
+    const read = await asOwner.query(api.canvas.readArtifact, { artifact_id: artifactId });
+    expect(read?.artifact.artifact_id).toBe(artifactId);
+    // The bounded system-event feed the chat consumes is owner-readable too.
+    expect(Array.isArray(await asOwner.query(api.canvas.listRecentEvents, {}))).toBe(true);
+  });
+
+  it("lastSeen / metrics reads resolve for the owner", async () => {
+    const t = convexTest(schema, modules).withIdentity(OWNER);
+    expect((await t.query(api.lastSeen.listArtifactChanges, {})).totalChanged).toBe(0);
+    expect(await t.query(api.metrics.listEvents, {})).toEqual([]);
+  });
+});
+
 describe("the agent service-token path is unaffected by the owner guard", () => {
   it("internal agentWrites.postMessage still runs un-authenticated", async () => {
     const t = convexTest(schema, modules); // no identity — mirrors the /agent/* runMutation
@@ -149,13 +200,17 @@ describe("the agent service-token path is unaffected by the owner guard", () => 
     expect(res.ok).toBe(true);
   });
 
-  it("dual-use read queries the /agent/* layer reaches stay open (no user identity)", async () => {
+  it("internal read queries the /agent/* layer reaches stay open (no user identity)", async () => {
     const t = convexTest(schema, modules);
     await seedArtifact(t);
-    // These are exactly what http.ts calls via ctx.runQuery on the service-token path.
-    const pending = await t.query(api.canvas.pendingWork, { cursor: 0 });
+    // Exactly what http.ts calls via ctx.runQuery on the service-token path.
+    const pending = await t.query(internal.canvas.pendingWork, { cursor: 0 });
     expect(Array.isArray(pending.messages)).toBe(true);
-    const artifacts = await t.query(api.canvas.listArtifacts, {});
+    const artifacts = await t.query(internal.canvas.listArtifactsForAgent, {});
     expect(artifacts.length).toBe(1);
+    const read = await t.query(internal.canvas.readArtifactForAgent, {
+      artifact_id: artifacts[0]!.artifact_id,
+    });
+    expect(read?.artifact.artifact_id).toBe(artifacts[0]!.artifact_id);
   });
 });

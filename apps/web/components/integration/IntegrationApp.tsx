@@ -16,9 +16,10 @@
  * which of the two it is — demo content is never dressed up as live Hermes state.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useConvex, useQuery } from "convex/react";
+import { useAuthToken } from "@convex-dev/auth/react";
 import { AppShell, StatusDot, Text, ThemeToggle } from "@hermes/ui";
 import type { StatusTone } from "@hermes/ui";
 import { SplitPane } from "@hermes/render";
@@ -35,9 +36,21 @@ import { useConvexCanvasAdapter } from "./useConvexCanvasAdapter";
 import { useConvexHistoryAdapter } from "./useConvexHistoryAdapter";
 import { createConvexChatBackend } from "./convexChatBackend";
 import { buildDemoChatItems } from "./demoSeed";
+import { ReadershipPanel } from "../metrics";
 import { bannerFor, resolveWorkspaceMode, type BannerCopy } from "./workspaceMode";
 
 type View = "canvas" | "history";
+
+/**
+ * The Convex HTTP-action origin (`*.convex.site`), where `/attachments/:id` is
+ * served. Convex derives it from the deployment URL (`*.convex.cloud`); a custom
+ * or non-standard domain is passed through unchanged.
+ */
+function convexSiteUrl(): string | null {
+  const url = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (typeof url !== "string" || url.length === 0) return null;
+  return url.replace(/\.convex\.cloud(?=\/|$)/, ".convex.site").replace(/\/+$/, "");
+}
 
 function Brand() {
   return (
@@ -105,6 +118,7 @@ function WorkspaceView({
   activeTabId,
   activeArtifactId,
   historyAdapter,
+  readership,
 }: {
   banner: BannerCopy;
   statusLabel: string;
@@ -114,6 +128,8 @@ function WorkspaceView({
   activeTabId: string | null;
   activeArtifactId: string | null;
   historyAdapter: HistoryAdapter;
+  /** Optional owner readership summary, mounted under history (live mode only). */
+  readership?: ReactNode;
 }) {
   const [view, setView] = useState<View>("canvas");
 
@@ -153,7 +169,10 @@ function WorkspaceView({
       </div>
     ) : (
       <div className="hc-history-region">
-        <HistoryPanel adapter={historyAdapter} />
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--hc-space-4)" }}>
+          <HistoryPanel adapter={historyAdapter} />
+          {readership}
+        </div>
       </div>
     );
 
@@ -203,7 +222,22 @@ function DemoWorkspace({ connected }: { connected: boolean }) {
 /** Live Convex-backed workspace — mounted only when the deployment has data. */
 function LiveWorkspace() {
   const client = useConvex();
-  const [chatBackend] = useState<ChatBackend>(() => createConvexChatBackend(client));
+  // The attachment-download route is owner-guarded and reads the Convex Auth token
+  // from an `Authorization` header (not a cookie), so a plain anchor href 401s. We
+  // fetch the bytes with the token instead; keep it in a ref so the once-created
+  // backend always reads the freshest token (it can refresh mid-session).
+  const token = useAuthToken();
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+
+  const [chatBackend] = useState<ChatBackend>(() => {
+    const siteUrl = convexSiteUrl();
+    return createConvexChatBackend(client, {
+      attachmentEndpoint: siteUrl
+        ? { baseUrl: siteUrl, getToken: () => tokenRef.current }
+        : undefined,
+    });
+  });
   const { adapter: canvasAdapter, activeTabId, activeArtifactId } = useConvexCanvasAdapter();
   const historyAdapter = useConvexHistoryAdapter(activeArtifactId);
 
@@ -221,6 +255,7 @@ function LiveWorkspace() {
       activeTabId={activeTabId}
       activeArtifactId={activeArtifactId}
       historyAdapter={historyAdapter}
+      readership={<ReadershipPanel />}
     />
   );
 }

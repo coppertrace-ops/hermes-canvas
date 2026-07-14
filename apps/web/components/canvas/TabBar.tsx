@@ -2,7 +2,17 @@
 
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
-import { Tab, TabList, IconButton } from "@hermes/ui";
+import {
+  Tab,
+  TabList,
+  IconButton,
+  Input,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PencilIcon,
+  CloseIcon,
+  PlusIcon,
+} from "@hermes/ui";
 import { ChangedBadge } from "@hermes/render";
 import type { CanvasTabView } from "@hermes/render";
 
@@ -84,7 +94,8 @@ export function TabBar({
           return (
             <div key={tab.id} className="hc-tabbar__item" data-active={tab.id === activeTabId || undefined}>
               {isEditing ? (
-                <input
+                <Input
+                  size="sm"
                   className="hc-tabbar__rename"
                   aria-label={`Rename ${tab.title}`}
                   value={draft}
@@ -115,7 +126,7 @@ export function TabBar({
                   disabled={index === 0}
                   onClick={() => onReorderTab(tab.id, index - 1)}
                 >
-                  <span aria-hidden>‹</span>
+                  <ChevronLeftIcon />
                 </IconButton>
                 <IconButton
                   label={`Move ${tab.title} right`}
@@ -123,13 +134,13 @@ export function TabBar({
                   disabled={index === ordered.length - 1}
                   onClick={() => onReorderTab(tab.id, index + 1)}
                 >
-                  <span aria-hidden>›</span>
+                  <ChevronRightIcon />
                 </IconButton>
                 <IconButton label={`Rename ${tab.title}`} size="sm" onClick={() => startRename(tab)}>
-                  <span aria-hidden>✎</span>
+                  <PencilIcon />
                 </IconButton>
                 <IconButton label={`Archive ${tab.title}`} size="sm" onClick={() => onArchiveTab(tab.id)}>
-                  <span aria-hidden>×</span>
+                  <CloseIcon />
                 </IconButton>
               </span>
             </div>
@@ -138,7 +149,7 @@ export function TabBar({
       </TabList>
 
       <IconButton label="New tab" className="hc-tabbar__new" onClick={() => onCreateTab(newTabTitle)}>
-        <span aria-hidden>＋</span>
+        <PlusIcon />
       </IconButton>
     </div>
   );

@@ -12,9 +12,16 @@ import schema from "./schema";
  * version carrying its `why` / `author` / `resolved_action` metadata. This proves
  * a real create+update sequence produces an ordered chain with that metadata, and
  * that an unknown artifact yields `null` (the panel's honest empty state).
+ *
+ * `versionChain` is a browser-only reader, so it is owner-guarded (WARDEN authz
+ * pass): the query runs as the signed-in owner via `t.withIdentity`, while the
+ * seed writes go through the agent-only internal path (no identity needed).
  */
 
 const modules = import.meta.glob("./**/!(*.test).*s");
+
+/** The signed-in owner; Convex Auth's allowlist-of-one means any identity IS the owner. */
+const OWNER = { subject: "owner|1", issuer: "https://example.com", email: "owner@example.com" };
 
 describe("canvas.versionChain", () => {
   it("returns the ordered chain with why / author / resolved_action metadata", async () => {
@@ -48,7 +55,7 @@ describe("canvas.versionChain", () => {
     expect(u2.ok).toBe(true);
     if (!u2.ok) return;
 
-    const chain = await t.query(api.canvas.versionChain, { artifact_id: artifactId });
+    const chain = await t.withIdentity(OWNER).query(api.canvas.versionChain, { artifact_id: artifactId });
     expect(chain).not.toBeNull();
     if (!chain) return;
 
@@ -72,7 +79,7 @@ describe("canvas.versionChain", () => {
 
   it("returns null for an unknown artifact (honest empty state)", async () => {
     const t = convexTest(schema, modules);
-    const chain = await t.query(api.canvas.versionChain, { artifact_id: "art_missing" });
+    const chain = await t.withIdentity(OWNER).query(api.canvas.versionChain, { artifact_id: "art_missing" });
     expect(chain).toBeNull();
   });
 });

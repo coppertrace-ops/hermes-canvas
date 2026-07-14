@@ -26,6 +26,12 @@ export interface AttachmentPreviewProps {
   onRemove?: (id: string) => void;
   /** Retry a failed upload. */
   onRetry?: (id: string) => void;
+  /**
+   * Download a committed attachment (readOnly bubbles only). The bytes are
+   * owner-guarded, so this is an authenticated fetch-and-save, not a plain link;
+   * omit it to render a chip with no download affordance.
+   */
+  onDownload?: (id: string) => void;
   /** Compact variant for rendering inside a sent bubble (no controls). */
   readOnly?: boolean;
 }
@@ -62,10 +68,15 @@ export function AttachmentPreview({
   attachment,
   onRemove,
   onRetry,
+  onDownload,
   readOnly = false,
 }: AttachmentPreviewProps) {
   const { id, name, mime, size, status, progress, error, previewUrl } = attachment;
   const showImage = previewUrl && isImageMime(mime);
+  // In a sent bubble the status is always "ready"; the badge is noise there. Keep
+  // it for the composer draft (pending/uploading/error are meaningful states).
+  const showBadge = status !== "uploading" && !(readOnly && status === "ready");
+  const showDownload = readOnly && status === "ready" && Boolean(onDownload);
 
   return (
     <div style={wrap} data-status={status} aria-label={`Attachment ${name}, ${status}`}>
@@ -96,12 +107,17 @@ export function AttachmentPreview({
         )}
       </div>
 
-      {status !== "uploading" && (
+      {showBadge && (
         <Badge tone={attachmentStatusTone(status)} size="sm" variant="subtle">
           {status}
         </Badge>
       )}
 
+      {showDownload && (
+        <IconButton label={`Download ${name}`} size="sm" onClick={() => onDownload!(id)}>
+          <DownloadGlyph />
+        </IconButton>
+      )}
       {!readOnly && status === "error" && onRetry && (
         <IconButton label={`Retry upload of ${name}`} size="sm" onClick={() => onRetry(id)}>
           <RetryGlyph />
@@ -179,6 +195,26 @@ function CloseGlyph() {
       focusable="false"
     >
       <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+function DownloadGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <path d="M12 3v12" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M5 21h14" />
     </svg>
   );
 }

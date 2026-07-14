@@ -44,6 +44,14 @@ export interface UseChat {
   upload(file: UploadFile, callbacks?: UploadCallbacks): UploadHandle;
   /** Request older history (scroll-up). No-op when the backend has no paging. */
   loadOlder(): Promise<boolean>;
+  /**
+   * Download a committed attachment. Rejects if the backend cannot serve
+   * downloads (mock/demo), which the caller uses to decide whether to render a
+   * download affordance at all.
+   */
+  downloadAttachment(id: string, name: string): Promise<void>;
+  /** True when the backend can serve authenticated attachment downloads. */
+  canDownloadAttachments: boolean;
 }
 
 /**
@@ -66,6 +74,8 @@ export function useChat(): UseChat {
     return unsubscribe;
   }, [backend]);
 
+  const canDownloadAttachments = typeof backend.downloadAttachment === "function";
+
   return useMemo<UseChat>(
     () => ({
       snapshot,
@@ -73,7 +83,11 @@ export function useChat(): UseChat {
       retry: (messageId) => backendRef.current.retry(messageId),
       upload: (file, callbacks) => backendRef.current.upload(file, callbacks),
       loadOlder: () => backendRef.current.loadOlder?.() ?? Promise.resolve(false),
+      downloadAttachment: (id, name) =>
+        backendRef.current.downloadAttachment?.(id, name) ??
+        Promise.reject(new Error("Downloads aren’t available here.")),
+      canDownloadAttachments,
     }),
-    [snapshot],
+    [snapshot, canDownloadAttachments],
   );
 }

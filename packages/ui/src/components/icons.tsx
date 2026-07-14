@@ -55,3 +55,44 @@ export function InboxIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function ChevronLeftIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M15 6l-6 6 6 6" />
+    </svg>
+  );
+}
+
+export function ChevronRightIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+export function PencilIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3z" />
+      <path d="M13.5 6.5l3 3" />
+    </svg>
+  );
+}
+
+export function CloseIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+export function PlusIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
