@@ -13,9 +13,10 @@ import {
 } from "@hermes/contract";
 import { httpRouter } from "convex/server";
 import type { z } from "zod";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { auth } from "./auth";
+import { respondWithAttachment, serveAttachment } from "./files";
 import { verifyServiceToken } from "./lib/agentAuth";
 import type { WriteOutcome } from "./lib/outcome";
 
@@ -80,7 +81,7 @@ http.route({
     const url = new URL(request.url);
     const parsed = updatesQuerySchema.safeParse({ cursor: url.searchParams.get("cursor") ?? undefined });
     if (!parsed.success) return errorResponse({ code: "validation_failed", message: "invalid cursor" });
-    const res = await ctx.runQuery(api.canvas.pendingWork, { cursor: parsed.data.cursor });
+    const res = await ctx.runQuery(internal.canvas.pendingWork, { cursor: parsed.data.cursor });
     return json(200, res);
   }),
 });
@@ -119,7 +120,7 @@ http.route({
     if (!(await verifyServiceToken(request.headers.get("Authorization")))) {
       return errorResponse({ code: "unauthorized", message: "missing or invalid service token" });
     }
-    const res = await ctx.runQuery(api.canvas.listArtifacts, {});
+    const res = await ctx.runQuery(internal.canvas.listArtifactsForAgent, {});
     return json(200, { artifacts: res });
   }),
 });
@@ -158,7 +159,7 @@ http.route({
     const id = url.pathname.slice(ARTIFACT_PREFIX.length);
     if (!id) return errorResponse({ code: "not_found", message: "artifact id required" });
     const seqParam = url.searchParams.get("seq");
-    const res = await ctx.runQuery(api.canvas.readArtifact, {
+    const res = await ctx.runQuery(internal.canvas.readArtifactForAgent, {
       artifact_id: id,
       seq: seqParam ? Number(seqParam) : undefined,
     });
@@ -321,18 +322,32 @@ http.route({
   }),
 });
 
-// --- GET /agent/attachments/:id (serving owned by COURIER/files*) ----------
+// --- GET /agent/attachments/:id --------------------------------------------
+// Serve the raw bytes the human shared, to the service-token agent. Auth is the
+// service token (verified here); the byte policy (nosniff + attachment
+// disposition + 10 MB serve refusal) lives in `files.respondWithAttachment`, so
+// the agent and human serving paths cannot diverge.
+const AGENT_ATTACHMENT_PREFIX = "/agent/attachments/";
 http.route({
-  pathPrefix: "/agent/attachments/",
+  pathPrefix: AGENT_ATTACHMENT_PREFIX,
   method: "GET",
-  handler: httpAction(async (_ctx, request) => {
+  handler: httpAction(async (ctx, request) => {
     if (!(await verifyServiceToken(request.headers.get("Authorization")))) {
       return errorResponse({ code: "unauthorized", message: "missing or invalid service token" });
     }
-    // Attachment byte serving (nosniff + attachment disposition) is implemented in
-    // `files*` (COURIER, plan §7); LEDGER owns the contract, not the serving path.
-    return json(501, { error: { code: "not_implemented", message: "attachment serving is provided by files* (COURIER)" } });
+    const id = new URL(request.url).pathname.slice(AGENT_ATTACHMENT_PREFIX.length);
+    if (!id) return errorResponse({ code: "not_found", message: "attachment id required" });
+    return respondWithAttachment(ctx, id);
   }),
+});
+
+// --- GET /attachments/:id (human download) ---------------------------------
+// The owner's own download link. Owner-guarded inside `serveAttachment`; same
+// byte policy as the agent path above.
+http.route({
+  pathPrefix: "/attachments/",
+  method: "GET",
+  handler: serveAttachment,
 });
 
 /** jobs/runs and patchTab return either {ok:true} or a rejection outcome. */

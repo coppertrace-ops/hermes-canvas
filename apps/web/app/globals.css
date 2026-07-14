@@ -35,8 +35,8 @@ body {
   display: flex;
   align-items: center;
   gap: var(--hc-space-2);
-  font-weight: var(--hc-font-weight-semibold, 600);
-  letter-spacing: var(--hc-tracking-tight, -0.01em);
+  font-weight: var(--hc-weight-semibold);
+  letter-spacing: var(--hc-tracking-tight);
   color: var(--hc-text);
   white-space: nowrap;
 }
@@ -46,15 +46,15 @@ body {
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: var(--hc-radius-md, 8px);
+  border-radius: var(--hc-radius-md);
   background: var(--hc-accent);
-  color: var(--hc-accent-contrast, #fff);
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--hc-accent-contrast);
+  font-size: var(--hc-font-size-sm);
+  font-weight: var(--hc-weight-bold);
 }
 .hc-brand__sub {
   color: var(--hc-text-tertiary);
-  font-weight: var(--hc-font-weight-normal, 400);
+  font-weight: var(--hc-weight-regular);
   font-size: var(--hc-font-size-sm);
 }
 
@@ -83,7 +83,7 @@ body {
   gap: 2px;
   background: var(--hc-surface-2);
   border: var(--hc-border-width) solid var(--hc-border);
-  border-radius: var(--hc-radius-lg, 10px);
+  border-radius: var(--hc-radius-lg);
 }
 .hc-viewswitch__btn {
   appearance: none;
@@ -91,13 +91,13 @@ body {
   background: transparent;
   color: var(--hc-text-secondary);
   font-size: var(--hc-font-size-sm);
-  font-weight: var(--hc-font-weight-medium, 500);
+  font-weight: var(--hc-weight-medium);
   padding: 5px 12px;
-  border-radius: var(--hc-radius-md, 8px);
+  border-radius: var(--hc-radius-md);
   cursor: pointer;
   transition:
-    background-color var(--hc-duration-fast, 150ms) var(--hc-ease-out, ease-out),
-    color var(--hc-duration-fast, 150ms) var(--hc-ease-out, ease-out);
+    background-color var(--hc-duration-2) var(--hc-ease-out),
+    color var(--hc-duration-2) var(--hc-ease-out);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -108,7 +108,7 @@ body {
 .hc-viewswitch__btn[aria-pressed="true"] {
   background: var(--hc-surface);
   color: var(--hc-text);
-  box-shadow: var(--hc-shadow-sm, 0 1px 2px rgb(0 0 0 / 0.08));
+  box-shadow: var(--hc-shadow-sm);
 }
 
 /* Demo-data banner — an honest, dismissible strip. Never styled to look like a
@@ -120,31 +120,28 @@ body {
   padding: 6px var(--hc-space-4);
   font-size: var(--hc-font-size-sm);
   color: var(--hc-text-secondary);
-  background: var(--hc-warning-subtle, var(--hc-surface-2));
+  background: var(--hc-warning-subtle);
   border-bottom: var(--hc-border-width) solid var(--hc-border);
 }
 .hc-databanner__dot {
   flex: none;
   width: 7px;
   height: 7px;
-  border-radius: var(--hc-radius-full, 999px);
-  background: var(--hc-warning, #b8860b);
+  border-radius: var(--hc-radius-full);
+  background: var(--hc-warning);
 }
 .hc-databanner--live {
-  background: var(--hc-success-subtle, var(--hc-surface-2));
+  background: var(--hc-success-subtle);
 }
 .hc-databanner--live .hc-databanner__dot {
-  background: var(--hc-success, #16a34a);
+  background: var(--hc-success);
 }
 .hc-databanner--loading .hc-databanner__dot {
-  background: var(--hc-info, #2563eb);
+  background: var(--hc-info);
 }
 .hc-databanner strong {
   color: var(--hc-text);
-  font-weight: var(--hc-font-weight-semibold, 600);
-}
-.hc-databanner__spacer {
-  flex: 1 1 0%;
+  font-weight: var(--hc-weight-semibold);
 }
 
 /* The workspace region under the (optional) banner: fills the shell main. */

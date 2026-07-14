@@ -1,0 +1,565 @@
+/*
+ * @hermes/ui — canvas & content-surface styles (GLASS, plan §7).
+ *
+ * The hero surfaces of the product — safe Markdown prose, the resizable split
+ * handle, artifact empty/loading/error states, strict-Mermaid output, the canvas
+ * tab bar, and the per-tab artifact rail — live in @hermes/render and
+ * apps/web/components/canvas but ship NO stylesheet of their own. Their class
+ * contracts are authored here, in the one sheet apps/web already imports
+ * (@hermes/ui/styles.css), so every `hc-` class those components reference
+ * resolves to a real rule instead of a browser default.
+ *
+ * Every value is a token; dark/light is inherited from tokens.css, never
+ * re-declared with a literal colour. The coverage guard
+ * (styles/coverage.test.ts) fails CI if a referenced class loses its rule here.
+ */
+
+/* ====================================================================== */
+/* Markdown prose — .hc-md (@hermes/render Markdown.tsx)                   */
+/* ====================================================================== */
+
+.hc-md {
+  max-width: 68ch;
+  color: var(--hc-text);
+  font-family: var(--hc-font-sans);
+  font-size: var(--hc-font-size-base);
+  line-height: var(--hc-line-relaxed);
+  overflow-wrap: break-word;
+}
+
+/* Vertical rhythm on the 8-pt grid: flow gap between siblings, at both the top
+   level and inside a blockquote. First/last children never add outer margin. */
+.hc-md > * + *,
+.hc-md__quote > * + * {
+  margin-top: var(--hc-space-4);
+}
+.hc-md > :first-child,
+.hc-md__quote > :first-child {
+  margin-top: 0;
+}
+
+/* Headings — one class for every level (Markdown.tsx tags h1–h6 with the same
+   className); the scale is expressed per element from the type tokens. */
+.hc-md__heading {
+  color: var(--hc-text);
+  font-weight: var(--hc-weight-semibold);
+  line-height: var(--hc-line-snug);
+  letter-spacing: var(--hc-tracking-tight);
+}
+.hc-md > .hc-md__heading + * {
+  margin-top: var(--hc-space-2);
+}
+.hc-md > * + .hc-md__heading {
+  margin-top: var(--hc-space-6);
+}
+h1.hc-md__heading {
+  font-size: var(--hc-font-size-xl);
+}
+h2.hc-md__heading {
+  font-size: var(--hc-font-size-lg);
+}
+h3.hc-md__heading {
+  font-size: var(--hc-font-size-md);
+}
+h4.hc-md__heading,
+h5.hc-md__heading,
+h6.hc-md__heading {
+  font-size: var(--hc-font-size-base);
+}
+h5.hc-md__heading,
+h6.hc-md__heading {
+  color: var(--hc-text-secondary);
+}
+
+.hc-md__p {
+  margin: 0;
+}
+
+/* Code — inline chip and fenced block, both on the sunken surface + mono. */
+.hc-md__code {
+  font-family: var(--hc-font-mono);
+  font-size: 0.875em;
+  padding: 0.1em var(--hc-space-1);
+  border-radius: var(--hc-radius-xs);
+  background-color: var(--hc-surface-sunken);
+  color: var(--hc-text);
+}
+.hc-md__pre {
+  margin: 0;
+  padding: var(--hc-space-3) var(--hc-space-4);
+  background-color: var(--hc-surface-sunken);
+  border: var(--hc-border-width) solid var(--hc-border);
+  border-radius: var(--hc-radius-md);
+  overflow-x: auto;
+}
+.hc-md__pre code {
+  font-family: var(--hc-font-mono);
+  font-size: var(--hc-font-size-sm);
+  line-height: var(--hc-line-normal);
+  color: var(--hc-text);
+  background: none;
+  padding: 0;
+}
+
+/* Lists — indent + intra-item rhythm on the grid. */
+.hc-md__ul,
+.hc-md__ol {
+  margin: 0;
+  padding-inline-start: var(--hc-space-6);
+}
+.hc-md__ul {
+  list-style: disc;
+}
+.hc-md__ol {
+  list-style: decimal;
+}
+.hc-md__ul li + li,
+.hc-md__ol li + li {
+  margin-top: var(--hc-space-1);
+}
+.hc-md__ul::marker,
+.hc-md__ol > li::marker {
+  color: var(--hc-text-tertiary);
+}
+
+.hc-md__quote {
+  margin: 0;
+  padding-inline-start: var(--hc-space-4);
+  border-inline-start: 3px solid var(--hc-border-strong);
+  color: var(--hc-text-secondary);
+}
+
+.hc-md__hr {
+  height: 0;
+  margin-block: var(--hc-space-6);
+  border: 0;
+  border-top: var(--hc-border-width) solid var(--hc-border);
+}
+
+.hc-md__link {
+  color: var(--hc-accent);
+  text-decoration: none;
+}
+.hc-md__link:hover {
+  text-decoration: underline;
+}
+
+/* A scheme-rejected link renders as inert text — visibly not a link. */
+.hc-md__link-blocked {
+  color: var(--hc-text-tertiary);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: not-allowed;
+}
+
+.hc-md__img {
+  border-radius: var(--hc-radius-md);
+  border: var(--hc-border-width) solid var(--hc-border);
+}
+
+/* Blocked external image — deliberately CONSPICUOUS: this is security-audit
+   evidence, not decoration. A bordered danger-subtle chip carrying the target
+   URL in mono, so an exfil attempt is unmissable and copyable. */
+.hc-md__img-blocked {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hc-space-1) var(--hc-space-2);
+  max-width: 100%;
+  padding: var(--hc-space-2) var(--hc-space-3);
+  border: var(--hc-border-width) solid var(--hc-danger);
+  border-radius: var(--hc-radius-md);
+  background-color: var(--hc-danger-subtle);
+  vertical-align: middle;
+}
+.hc-md__img-blocked-label {
+  font-size: var(--hc-font-size-xs);
+  font-weight: var(--hc-weight-semibold);
+  letter-spacing: var(--hc-tracking-wide);
+  text-transform: uppercase;
+  color: var(--hc-danger);
+}
+.hc-md__img-blocked-url {
+  font-family: var(--hc-font-mono);
+  font-size: var(--hc-font-size-xs);
+  color: var(--hc-text-secondary);
+  word-break: break-all;
+}
+
+/* Tables aren't emitted by the current parser, but style them defensively so a
+   future GFM policy inherits the system rather than browser defaults. */
+.hc-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--hc-font-size-sm);
+}
+.hc-md th,
+.hc-md td {
+  padding: var(--hc-space-2) var(--hc-space-3);
+  border: var(--hc-border-width) solid var(--hc-border);
+  text-align: start;
+}
+.hc-md th {
+  background-color: var(--hc-surface-sunken);
+  font-weight: var(--hc-weight-semibold);
+}
+
+/* ====================================================================== */
+/* Split pane — .hc-split (@hermes/render SplitPane.tsx)                   */
+/* ====================================================================== */
+
+.hc-split {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.hc-split--horizontal {
+  width: 100%;
+}
+.hc-split--vertical {
+  height: 100%;
+}
+.hc-split__pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.hc-split__pane--primary,
+.hc-split__pane--secondary {
+  overflow: hidden;
+}
+
+/*
+ * The resize handle. Previously matched NO rule and collapsed to 0px, so the
+ * divider was invisible and the pane read as non-resizable. It is now a real
+ * ~11px gutter (a comfortable pointer + keyboard target) painted as a single
+ * 1px hairline, tinting to the accent on hover / drag / focus.
+ */
+.hc-split__separator {
+  flex: none;
+  position: relative;
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  z-index: var(--hc-z-raised);
+  touch-action: none;
+}
+.hc-split__separator::before {
+  content: "";
+  position: absolute;
+  background-color: var(--hc-border);
+  transition:
+    background-color var(--hc-duration-2) var(--hc-ease-standard),
+    inline-size var(--hc-duration-2) var(--hc-ease-standard),
+    block-size var(--hc-duration-2) var(--hc-ease-standard);
+}
+.hc-split__separator[aria-orientation="horizontal"] {
+  width: 11px;
+  cursor: col-resize;
+}
+.hc-split__separator[aria-orientation="horizontal"]::before {
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+.hc-split__separator[aria-orientation="vertical"] {
+  height: 11px;
+  cursor: row-resize;
+}
+.hc-split__separator[aria-orientation="vertical"]::before {
+  inset-inline: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+.hc-split__separator:hover::before,
+.hc-split[data-dragging] .hc-split__separator::before,
+.hc-split__separator:focus-visible::before {
+  background-color: var(--hc-accent);
+}
+.hc-split__separator[aria-orientation="horizontal"]:hover::before,
+.hc-split[data-dragging] .hc-split__separator[aria-orientation="horizontal"]::before,
+.hc-split__separator[aria-orientation="horizontal"]:focus-visible::before {
+  width: 2px;
+}
+.hc-split__separator[aria-orientation="vertical"]:hover::before,
+.hc-split[data-dragging] .hc-split__separator[aria-orientation="vertical"]::before,
+.hc-split__separator[aria-orientation="vertical"]:focus-visible::before {
+  height: 2px;
+}
+.hc-split__separator:focus-visible {
+  outline: var(--hc-focus-ring-width) solid var(--hc-focus-ring-color);
+  outline-offset: -3px;
+  border-radius: var(--hc-radius-sm);
+}
+
+/* ====================================================================== */
+/* Artifact states — .hc-artifact-state (@hermes/render ArtifactStates.tsx)*/
+/* ====================================================================== */
+
+.hc-artifact-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hc-space-3);
+  height: 100%;
+  min-height: 200px;
+  padding: var(--hc-space-8) var(--hc-space-6);
+  text-align: center;
+}
+.hc-artifact-state__text {
+  margin: 0;
+  font-size: var(--hc-font-size-sm);
+  color: var(--hc-text-secondary);
+}
+.hc-artifact-state--loading {
+  color: var(--hc-text-secondary);
+}
+.hc-artifact-state--error {
+  color: var(--hc-danger);
+}
+.hc-artifact-state--empty {
+  color: var(--hc-text-secondary);
+}
+
+/* ====================================================================== */
+/* Mermaid — .hc-mermaid (@hermes/render Mermaid.tsx)                      */
+/* ====================================================================== */
+
+.hc-mermaid {
+  display: block;
+  overflow-x: auto;
+}
+.hc-mermaid[data-state="ok"] svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+.hc-mermaid__loading {
+  display: block;
+  padding: var(--hc-space-6);
+  text-align: center;
+  font-size: var(--hc-font-size-sm);
+  color: var(--hc-text-secondary);
+}
+
+/* Error state mirrors the artifact-error card: a danger-tinted panel that names
+   the failure and shows the raw source below (never a blank pane). */
+.hc-mermaid__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hc-space-2);
+  margin: 0;
+  padding: var(--hc-space-3) var(--hc-space-4);
+  border: var(--hc-border-width) solid var(--hc-danger);
+  border-radius: var(--hc-radius-md);
+  background-color: var(--hc-danger-subtle);
+}
+.hc-mermaid__error-badge {
+  font-size: var(--hc-font-size-xs);
+  font-weight: var(--hc-weight-semibold);
+  letter-spacing: var(--hc-tracking-wide);
+  text-transform: uppercase;
+  color: var(--hc-danger);
+}
+.hc-mermaid__error-message {
+  font-size: var(--hc-font-size-sm);
+  color: var(--hc-text-secondary);
+}
+.hc-mermaid__source {
+  margin-top: var(--hc-space-3);
+  padding: var(--hc-space-3) var(--hc-space-4);
+  background-color: var(--hc-surface-sunken);
+  border: var(--hc-border-width) solid var(--hc-border);
+  border-radius: var(--hc-radius-md);
+  overflow-x: auto;
+  font-family: var(--hc-font-mono);
+  font-size: var(--hc-font-size-sm);
+  color: var(--hc-text);
+}
+.hc-mermaid__source code {
+  font: inherit;
+  color: inherit;
+  background: none;
+}
+
+/* ====================================================================== */
+/* Canvas tab bar — .hc-tabbar (apps/web/components/canvas/TabBar.tsx)     */
+/* ====================================================================== */
+
+.hc-tabbar {
+  display: flex;
+  align-items: center;
+  gap: var(--hc-space-1);
+  padding-inline: var(--hc-space-2);
+  background-color: var(--hc-surface);
+  border-bottom: var(--hc-border-width) solid var(--hc-border);
+}
+.hc-tabbar__list {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0;
+  overflow-x: auto;
+  box-shadow: none;
+  scrollbar-width: thin;
+}
+.hc-tabbar__item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+.hc-tabbar__item .hc-tab::after {
+  inset-inline: var(--hc-space-3);
+}
+.hc-tabbar__badge {
+  margin-inline-start: var(--hc-space-1);
+}
+
+/* Per-tab controls (reorder / rename / archive) stay out of sight until the tab
+   is hovered, focused within, or active — so the bar reads calm, but every
+   control is one keyboard focus away (focus-within reveals them). */
+.hc-tabbar__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-width var(--hc-duration-2) var(--hc-ease-standard),
+    opacity var(--hc-duration-2) var(--hc-ease-standard);
+}
+.hc-tabbar__item:hover .hc-tabbar__controls,
+.hc-tabbar__item:focus-within .hc-tabbar__controls,
+.hc-tabbar__item[data-active] .hc-tabbar__controls {
+  max-width: 140px;
+  opacity: 1;
+}
+.hc-tabbar__rename {
+  width: 14ch;
+  min-width: 8ch;
+}
+.hc-tabbar__new {
+  flex: none;
+  margin-inline-start: var(--hc-space-1);
+}
+
+/* ====================================================================== */
+/* Canvas shell & artifact rail — .hc-canvas (canvas/CanvasShell.tsx)      */
+/* ====================================================================== */
+
+.hc-canvas {
+  min-width: 0;
+  background-color: var(--hc-bg);
+  color: var(--hc-text);
+}
+.hc-canvas__body {
+  position: relative;
+}
+
+/* The per-tab artifact picker as a segmented pill control — never bare native
+   buttons. Horizontally scrollable, with selected / hover / focus states. */
+.hc-canvas__rail {
+  display: flex;
+  align-items: center;
+  gap: var(--hc-space-1);
+  padding: var(--hc-space-2) var(--hc-space-3);
+  overflow-x: auto;
+  background-color: var(--hc-surface-2);
+  border-bottom: var(--hc-border-width) solid var(--hc-border);
+  scrollbar-width: thin;
+}
+.hc-canvas__rail-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hc-space-2);
+  flex: none;
+  height: 28px;
+  padding-inline: var(--hc-space-3);
+  border: var(--hc-border-width) solid transparent;
+  border-radius: var(--hc-radius-full);
+  background: transparent;
+  color: var(--hc-text-secondary);
+  font-family: inherit;
+  font-size: var(--hc-font-size-sm);
+  font-weight: var(--hc-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--hc-duration-1) var(--hc-ease-standard),
+    color var(--hc-duration-1) var(--hc-ease-standard),
+    border-color var(--hc-duration-1) var(--hc-ease-standard);
+}
+.hc-canvas__rail-item:hover {
+  background-color: var(--hc-surface-hover);
+  color: var(--hc-text);
+}
+.hc-canvas__rail-item:focus-visible {
+  outline: var(--hc-focus-ring-width) solid var(--hc-focus-ring-color);
+  outline-offset: var(--hc-focus-ring-offset);
+}
+.hc-canvas__rail-item[aria-selected="true"] {
+  background-color: var(--hc-accent-subtle);
+  color: var(--hc-accent);
+}
+.hc-canvas__rail-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 24ch;
+}
+
+/* ====================================================================== */
+/* History surfaces — apps/web/components/history/*                       */
+/* ====================================================================== */
+/*
+ * These components are authored with inline `cssVar()` styles (their layout,
+ * spacing, and colour all live in the TSX, which is out of GLASS's edit scope).
+ * The rules here are deliberately COMPLEMENTARY — they only supply what an inline
+ * style can't reach: min-0 so diff panes shrink inside their grid instead of
+ * overflowing, and long-token wrapping. They never restate an inline property, so
+ * nothing here fights the component.
+ */
+
+.hc-history-panel {
+  min-width: 0;
+  min-height: 0;
+}
+/* The ready view is a 2-column grid; let both columns shrink below content so a
+   wide diff scrolls internally rather than blowing out the layout. */
+.hc-history-panel > * {
+  min-width: 0;
+}
+
+.hc-diff-view,
+.hc-version-timeline {
+  min-width: 0;
+}
+
+/* Diff bodies — keep wide content contained; long unbroken tokens wrap. */
+.hc-md-diff,
+.hc-board-diff,
+.hc-html-diff,
+.hc-mermaid-diff {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Inline word-level highlight: a long inserted/deleted run must wrap, never push
+   the diff column wider. */
+.hc-word-tokens {
+  overflow-wrap: anywhere;
+}
+
+/* In-place restore / merge dialogs already carry the raised Panel look; just let
+   them shrink to their container. */
+.hc-restore-confirm,
+.hc-merge-prompt {
+  min-width: 0;
+}

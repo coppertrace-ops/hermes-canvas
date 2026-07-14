@@ -1,5 +1,5 @@
-import { isValidMetricsEvent, summarizeReadership } from "../../../packages/diff/src/metrics";
-import type { MetricsEvent, ReadershipSummary } from "../../../packages/diff/src/metrics";
+import { isValidMetricsEvent, summarizeReadership } from "@hermes/diff";
+import type { MetricsEvent, ReadershipSummary } from "@hermes/diff";
 import { v } from "convex/values";
 import { requireOwner } from "./authGuard";
 import { mutation, query } from "./_generated/server";
@@ -19,11 +19,11 @@ import { mutation, query } from "./_generated/server";
  * summary aggregation all live in `@hermes/diff` (pure, tested); these are the
  * thin Convex I/O wrappers. Nothing here reads or writes artifact content.
  *
- * AUTH: `recordEvent` is a browser-only mutation (the reader UI instruments the
- * owner's own engagement; it is not wired into `/agent/*`), so it `requireOwner`s
- * at its top — an anonymous caller cannot inject readership events that would skew
- * the kill/keep signal. `readershipSummary` and `listEvents` are browser-only READ
- * queries left un-guarded within the scope of this owner-write pass.
+ * AUTH: every function here is browser-only (not wired into `/agent/*`) and
+ * `requireOwner`s at its top. `recordEvent` stops an anonymous caller injecting
+ * readership events that would skew the kill/keep signal; `readershipSummary` and
+ * `listEvents` are guarded so the instrumentation is not world-readable over the
+ * public Convex API.
  */
 
 const kindValidator = v.union(
@@ -113,6 +113,7 @@ function toEvent(row: {
 export const readershipSummary = query({
   args: { since: v.optional(v.number()) },
   handler: async (ctx, args): Promise<ReadershipSummary> => {
+    await requireOwner(ctx);
     const rows =
       args.since !== undefined
         ? await ctx.db
@@ -128,6 +129,7 @@ export const readershipSummary = query({
 export const listEvents = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args): Promise<MetricsEvent[]> => {
+    await requireOwner(ctx);
     const rows = await ctx.db
       .query("metrics")
       .withIndex("by_at")

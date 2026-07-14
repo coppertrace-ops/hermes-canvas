@@ -48,12 +48,23 @@ function actorOf(author: Author): EventActor {
   return author === "agent" ? "agent" : "human";
 }
 
-/** Build the `limit_rejected` event a caller records when a write is refused. */
+/**
+ * Build the rejection event a caller records when a write is refused (a blocked
+ * write is evidence, not silence — plan §3).
+ *
+ * The event `kind` stays `limit_rejected` — the kind union is frozen and a chat
+ * consumer (`components/chat/events.ts`) exhaustively `never`-checks it, so a new
+ * kind cannot be added additively without breaking that surface. Instead the true
+ * cause is threaded into `refs.rejected_code`, so a `not_found` /
+ * `validation_failed` rejection is no longer indistinguishable from an actual
+ * limit breach: `limit_rejected` + `rejected_code === "oversize"` is a real cap
+ * hit; any other `rejected_code` is a non-limit refusal.
+ */
 export function rejectionEvent(err: CanvasError, author: Author, refs: EventRefs, at: number): PlannedEvent {
   return {
     kind: "limit_rejected",
     actor: actorOf(author),
-    refs: { ...refs },
+    refs: { ...refs, rejected_code: err.error.code },
     at,
   };
 }

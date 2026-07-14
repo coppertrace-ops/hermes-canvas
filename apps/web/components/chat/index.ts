@@ -32,6 +32,8 @@ export type { ComposerProps } from "./Composer";
 export { AttachmentPicker } from "./AttachmentPicker";
 export type { AttachmentPickerProps } from "./AttachmentPicker";
 export { ConnectionBanner } from "./ConnectionBanner";
+export { CopyButton } from "./CopyButton";
+export type { CopyButtonProps } from "./CopyButton";
 export { StreamingDots } from "./StreamingDots";
 export { AttachmentPreview, ProgressBar } from "./AttachmentPreview";
 export type { AttachmentPreviewProps } from "./AttachmentPreview";
@@ -59,3 +61,12 @@ export {
 export type { FileLike, GuardResult } from "./attachments";
 export { describeSystemEvent, isSystemLineKind } from "./events";
 export { buildTimeline } from "./timeline";
+export { GROUP_WINDOW_MS, layoutTimeline } from "./grouping";
+export type { DayDividerRow, MessageRow, SystemRow, TimelineRow } from "./grouping";
+export {
+  dayKey,
+  formatDayDivider,
+  formatExactTime,
+  formatMessageTime,
+  isSameDay,
+} from "./time";

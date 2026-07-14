@@ -121,6 +121,8 @@ export const feedMessageSchema = z.object({
   body: z.string(),
   status: z.enum(["streaming", "complete"]),
   at: z.number().int().nonnegative(),
+  /** Attachment ids bound to this message (owner uploads). Absent when none. */
+  attachments: z.array(z.string()).optional(),
 });
 export type FeedMessage = z.infer<typeof feedMessageSchema>;
 

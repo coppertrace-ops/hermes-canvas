@@ -58,16 +58,35 @@ export function assertOwnerAllowed(
   }
 }
 
+/** True when the deployment is running as production (Vercel or Node signal). */
+function isProduction(env: Record<string, string | undefined>): boolean {
+  return env.NODE_ENV === "production" || env.VERCEL_ENV === "production";
+}
+
 /**
  * Gate account creation. Only the `signUp` flow creates an account; it is refused
  * unless a valid one-time bootstrap secret is presented. All other flows pass
  * through (their account must already exist and the allowlist already applied).
+ *
+ * PRODUCTION RE-BOOTSTRAP GUARD: the operational rule is to UNSET
+ * `OWNER_BOOTSTRAP_SECRET` after the first sign-up. As belt-and-braces, if the
+ * secret is ever left set in production AND an owner account already exists,
+ * sign-up is refused outright — a leftover secret cannot be used to re-create or
+ * race a second owner account. `ownerExists` is supplied by the caller that can
+ * see the `users` table (the pure policy stays I/O-free and unit-testable).
  */
 export function assertBootstrapAllowed(
   params: { flow?: unknown; secret?: unknown },
   env: Record<string, string | undefined> = process.env,
+  ownerExists = false,
 ): void {
   if (params.flow !== "signUp") return;
+
+  if (ownerExists && isProduction(env) && env.OWNER_BOOTSTRAP_SECRET) {
+    throw new ConvexError(
+      "sign-up is closed: the owner account already exists (unset OWNER_BOOTSTRAP_SECRET)",
+    );
+  }
 
   const configured = env.OWNER_BOOTSTRAP_SECRET;
   if (!configured) {
@@ -89,9 +108,10 @@ export function assertBootstrapAllowed(
 export function ownerProfile(
   params: Record<string, unknown>,
   env: Record<string, string | undefined> = process.env,
+  ownerExists = false,
 ): { email: string } {
   const email = normalizeEmail(params.email);
   assertOwnerAllowed(email, env);
-  assertBootstrapAllowed(params, env);
+  assertBootstrapAllowed(params, env, ownerExists);
   return { email };
 }

@@ -98,6 +98,9 @@ export default defineSchema({
       job_key: v.optional(v.string()),
       version_seq: v.optional(v.number()),
       tab_id: v.optional(v.string()),
+      // On a `limit_rejected` event, the true ApiError code (oversize, not_found,
+      // validation_failed, …). Additive; the frozen kind union is unchanged.
+      rejected_code: v.optional(v.string()),
     }),
     at: v.number(),
   }).index("by_seq", ["seq"]),
@@ -122,6 +125,11 @@ export default defineSchema({
      * Agent messages leave this undefined.
      */
     agent_delivered_at: v.optional(v.number()),
+    /**
+     * Attachment ids (`attachments._id`) bound to this message. Additive/optional
+     * so every existing row (which has no attachments) stays valid.
+     */
+    attachments: v.optional(v.array(v.string())),
   })
     .index("by_event_seq", ["event_seq"])
     .index("by_stream", ["stream_id"]),
@@ -132,6 +140,25 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("archived")),
     created_at: v.number(),
   }),
+
+  /**
+   * Attachment metadata (OWNER: COURIER, plan §3). One row per bound upload. The
+   * bytes live in Convex `_storage`; this row records the display name, declared
+   * mime, the server-measured `size`, the `sha256` Convex computed at ingest, and
+   * who uploaded it. Bound only after the 10 MB cap is enforced server-side
+   * (`files.bindAttachment`); an oversize upload is deleted and never lands here.
+   * Additive-only (plan §9); no append-only invariant applies (this is metadata,
+   * not `versions`/`events`).
+   */
+  attachments: defineTable({
+    file_id: v.string(), // == _storage id of the uploaded bytes
+    name: v.string(),
+    mime: v.string(),
+    size: v.number(),
+    sha256: v.string(),
+    uploaded_by: v.union(v.literal("human"), v.literal("agent")),
+    at: v.number(),
+  }).index("by_file", ["file_id"]),
 
   jobs: defineTable({
     key: v.string(),

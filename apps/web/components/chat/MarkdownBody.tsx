@@ -1,14 +1,21 @@
 "use client";
 
 /**
- * MarkdownBody — sanitized agent/human message rendering for Hermes Canvas.
+ * MarkdownBody — sanitized agent message rendering for Hermes Canvas.
  * No rehype-raw. CSP-safe: block javascript: links; strip remote images (beacon risk).
+ *
+ * Body text renders at the base reading size (the sm size the owner flagged as too
+ * small is reserved for metadata). GFM tables get real cell styling inside a
+ * horizontal-scroll wrapper so wide tables never blow out the pane. Fenced code
+ * blocks carry a hover copy affordance.
  */
 
 import type { CSSProperties, ReactNode } from "react";
+import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import { CopyButton } from "./CopyButton";
 
 const schema = {
   ...defaultSchema,
@@ -45,6 +52,54 @@ const inlineCodeStyle: CSSProperties = {
   background: "var(--hc-surface-sunken, rgba(127,127,127,0.15))",
 };
 
+const tableWrap: CSSProperties = {
+  overflowX: "auto",
+  margin: "0 0 0.5em",
+  maxWidth: "100%",
+};
+
+const tableStyle: CSSProperties = {
+  borderCollapse: "collapse",
+  width: "100%",
+  fontSize: "0.95em",
+};
+
+const cellStyle: CSSProperties = {
+  border: "var(--hc-border-width) solid var(--hc-border)",
+  padding: "var(--hc-space-1) var(--hc-space-2)",
+  textAlign: "left",
+  verticalAlign: "top",
+};
+
+const headerCellStyle: CSSProperties = {
+  ...cellStyle,
+  fontWeight: "var(--hc-weight-semibold, 600)",
+  background: "var(--hc-surface-sunken, var(--hc-surface))",
+};
+
+/** A fenced code block with a hover copy button reading the rendered text. */
+function CodeBlockPre({ children }: { children?: ReactNode }) {
+  const ref = useRef<HTMLPreElement>(null);
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      style={{ position: "relative" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <pre ref={ref} style={preStyle}>
+        {children}
+      </pre>
+      <CopyButton
+        text={() => ref.current?.textContent ?? ""}
+        visible={hovered}
+        label="Copy"
+        style={{ position: "absolute", top: "var(--hc-space-1)", right: "var(--hc-space-1)" }}
+      />
+    </div>
+  );
+}
+
 export function MarkdownBody({ children }: { children: string }) {
   return (
     <div
@@ -52,7 +107,7 @@ export function MarkdownBody({ children }: { children: string }) {
       style={{
         wordBreak: "break-word",
         lineHeight: 1.5,
-        fontSize: "var(--hc-font-size-sm, 0.9375rem)",
+        fontSize: "var(--hc-font-size-base, 0.9375rem)",
       }}
     >
       <ReactMarkdown
@@ -69,7 +124,7 @@ export function MarkdownBody({ children }: { children: string }) {
             );
           },
           img: () => null, // block remote image beacons; attachments use chips
-          pre: ({ children: c }) => <pre style={preStyle}>{c}</pre>,
+          pre: ({ children: c }) => <CodeBlockPre>{c}</CodeBlockPre>,
           code: ({ className, children: c, ...props }) => {
             const isBlock = Boolean(className);
             if (isBlock) {
@@ -88,6 +143,13 @@ export function MarkdownBody({ children }: { children: string }) {
           p: ({ children: c }) => <p style={{ margin: "0 0 0.5em" }}>{c}</p>,
           ul: ({ children: c }) => <ul style={{ margin: "0 0 0.5em", paddingLeft: "1.25em" }}>{c}</ul>,
           ol: ({ children: c }) => <ol style={{ margin: "0 0 0.5em", paddingLeft: "1.25em" }}>{c}</ol>,
+          table: ({ children: c }) => (
+            <div style={tableWrap}>
+              <table style={tableStyle}>{c}</table>
+            </div>
+          ),
+          th: ({ children: c }) => <th style={headerCellStyle}>{c}</th>,
+          td: ({ children: c }) => <td style={cellStyle}>{c}</td>,
           blockquote: ({ children: c }) => (
             <blockquote
               style={{

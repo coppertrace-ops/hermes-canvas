@@ -102,6 +102,33 @@ describe("assertBootstrapAllowed — no public sign-up", () => {
     const env = { ...prodEnv, OWNER_BOOTSTRAP_SECRET: secret };
     expect(() => assertBootstrapAllowed({ flow: "signUp", secret }, env)).not.toThrow();
   });
+
+  describe("production re-bootstrap guard (owner already exists)", () => {
+    const secret = "the-one-time-secret-value-1234567890abcd";
+
+    it("refuses sign-up in production when the secret is left set AND an owner exists", () => {
+      const env = { ...prodEnv, OWNER_BOOTSTRAP_SECRET: secret };
+      const err = thrown(() =>
+        assertBootstrapAllowed({ flow: "signUp", secret }, env, /* ownerExists */ true),
+      );
+      expect(err).toBeInstanceOf(ConvexError);
+      expect(err.data).toContain("already exists");
+    });
+
+    it("still permits the FIRST bootstrap in production (no owner yet) with the right secret", () => {
+      const env = { ...prodEnv, OWNER_BOOTSTRAP_SECRET: secret };
+      expect(() =>
+        assertBootstrapAllowed({ flow: "signUp", secret }, env, /* ownerExists */ false),
+      ).not.toThrow();
+    });
+
+    it("does not fire outside production even if an owner exists (dev bootstrap stays open)", () => {
+      const env = { OWNER_EMAIL: OWNER, NODE_ENV: "development", OWNER_BOOTSTRAP_SECRET: secret };
+      expect(() =>
+        assertBootstrapAllowed({ flow: "signUp", secret }, env, /* ownerExists */ true),
+      ).not.toThrow();
+    });
+  });
 });
 
 describe("ownerProfile — the provider callback", () => {

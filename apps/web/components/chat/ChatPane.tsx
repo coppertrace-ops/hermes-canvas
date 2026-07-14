@@ -30,7 +30,7 @@ export interface ChatPaneProps {
 
 /** The inner pane; expects a `<ChatProvider>` ancestor. */
 export function ChatPane({ title = "Hermes", actions }: ChatPaneProps) {
-  const { snapshot, retry, loadOlder } = useChat();
+  const { snapshot, retry, loadOlder, downloadAttachment, canDownloadAttachments } = useChat();
   return (
     <Panel
       title={title}
@@ -48,6 +48,13 @@ export function ChatPane({ title = "Hermes", actions }: ChatPaneProps) {
           onLoadOlder={() => {
             void loadOlder();
           }}
+          onDownloadAttachment={
+            canDownloadAttachments
+              ? (id, name) => {
+                  void downloadAttachment(id, name);
+                }
+              : undefined
+          }
         />
         <Composer />
       </div>

@@ -12,7 +12,7 @@ import { CanvasError, planRestoreArtifact } from "@hermes/contract";
 import { v } from "convex/values";
 import { requireOwner } from "./authGuard";
 import type { Doc } from "./_generated/dataModel";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import { internalQuery, mutation, query, type QueryCtx } from "./_generated/server";
 import { reject, type WriteOutcome } from "./lib/outcome";
 import {
   applyPlan,
@@ -30,13 +30,17 @@ import {
  * Restore is a human action from the history UI (CHRONICLE consumes it), routed
  * through the same append-only plan as every other write.
  *
- * AUTH BOUNDARY (plan §6): `restoreArtifact` is the ONLY browser-callable mutation
- * in this file and it is NOT reachable through `/agent/*`, so it `requireOwner`s at
- * its top. The read queries here are DUAL-USE — the `/agent/*` GET routes reach
- * `listArtifacts` / `readArtifact` / `pendingWork` via the service-token path where
- * no user identity exists — so they deliberately do NOT adopt the owner guard;
- * applying it would break the agent read path. Mixed read authorization is out of
- * scope for this owner-write pass.
+ * AUTH BOUNDARY (plan §6): the Convex public API is world-reachable over the
+ * deployment URL, so every browser-facing reader here `requireOwner`s at its top —
+ * an anonymous caller cannot read the owner's canvas. The demo bypass keeps local
+ * dev open (never production; see `authGuard`/`@hermes/env`).
+ *
+ * A few readers are DUAL-USE: the `/agent/*` GET routes reach the same data over
+ * the service-token path, where no user identity exists. For those the shared read
+ * logic is factored into an `internalQuery` (`*ForAgent`) that `http.ts` calls via
+ * `ctx.runQuery`, plus a separate owner-guarded public `query` of the STABLE name
+ * the browser already subscribes to. `pendingWork` is agent-only (only `http.ts`
+ * calls it) so it is a plain `internalQuery` with no public wrapper.
  */
 
 function summaryOf(doc: Doc<"artifacts">): ArtifactSummary {
@@ -76,28 +80,47 @@ async function currentCursor(ctx: QueryCtx): Promise<number> {
   return row?.value ?? 0;
 }
 
+async function listArtifactsImpl(ctx: QueryCtx, includeArchived?: boolean): Promise<ArtifactSummary[]> {
+  const docs = await ctx.db.query("artifacts").collect();
+  return docs.filter((d) => includeArchived || d.status === "active").map(summaryOf);
+}
+
+/** Agent (service-token) read path — invoked by `http.ts` via `ctx.runQuery`; no user identity exists. */
+export const listArtifactsForAgent = internalQuery({
+  args: { include_archived: v.optional(v.boolean()) },
+  handler: (ctx, args): Promise<ArtifactSummary[]> => listArtifactsImpl(ctx, args.include_archived),
+});
+
+/** Browser read path — owner-guarded live view. Stable public name the UI subscribes to. */
 export const listArtifacts = query({
   args: { include_archived: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<ArtifactSummary[]> => {
-    const docs = await ctx.db.query("artifacts").collect();
-    return docs
-      .filter((d) => args.include_archived || d.status === "active")
-      .map(summaryOf);
+    await requireOwner(ctx);
+    return listArtifactsImpl(ctx, args.include_archived);
   },
 });
 
+async function readArtifactImpl(ctx: QueryCtx, artifactId: string, seq?: number): Promise<ArtifactRead | null> {
+  const doc = await getArtifactByKey(ctx, artifactId);
+  if (!doc) return null;
+  const wantSeq = seq ?? doc.head_seq;
+  const version = await getVersion(ctx, artifactId, wantSeq);
+  if (!version) return null;
+  return { artifact: summaryOf(doc), version: versionOf(version) };
+}
+
+/** Agent (service-token) read path — invoked by `http.ts` via `ctx.runQuery`. */
+export const readArtifactForAgent = internalQuery({
+  args: { artifact_id: v.string(), seq: v.optional(v.number()) },
+  handler: (ctx, args): Promise<ArtifactRead | null> => readArtifactImpl(ctx, args.artifact_id, args.seq),
+});
+
+/** Browser read path — owner-guarded. Stable public name the UI subscribes to. */
 export const readArtifact = query({
   args: { artifact_id: v.string(), seq: v.optional(v.number()) },
   handler: async (ctx, args): Promise<ArtifactRead | null> => {
-    const doc = await getArtifactByKey(ctx, args.artifact_id);
-    if (!doc) return null;
-    const wantSeq = args.seq ?? doc.head_seq;
-    const version = await getVersion(ctx, args.artifact_id, wantSeq);
-    if (!version) return null;
-    return {
-      artifact: summaryOf(doc),
-      version: versionOf(version),
-    };
+    await requireOwner(ctx);
+    return readArtifactImpl(ctx, args.artifact_id, args.seq);
   },
 });
 
@@ -107,6 +130,7 @@ export const listTabs = query({
   handler: async (
     ctx,
   ): Promise<{ id: string; title: string; order: number; status: "active" | "archived" }[]> => {
+    await requireOwner(ctx);
     const docs = await ctx.db.query("tabs").collect();
     return docs
       .filter((t) => t.status === "active")
@@ -130,6 +154,7 @@ export const versionChain = query({
     ctx,
     args,
   ): Promise<{ artifact: ArtifactSummary; head_seq: number; versions: ArtifactVersion[] } | null> => {
+    await requireOwner(ctx);
     const doc = await getArtifactByKey(ctx, args.artifact_id);
     if (!doc) return null;
     const rows = await ctx.db
@@ -141,21 +166,25 @@ export const versionChain = query({
   },
 });
 
-export const getUpdates = query({
-  args: { cursor: v.optional(v.number()) },
-  handler: async (ctx, args): Promise<UpdatesResponse> => {
-    const cursor = args.cursor ?? 0;
-    const eventDocs = await ctx.db
-      .query("events")
-      .withIndex("by_seq", (q) => q.gt("seq", cursor))
-      .collect();
-    const events: FeedEvent[] = eventDocs.map((e) => ({ seq: e.seq, kind: e.kind, actor: e.actor, refs: e.refs, at: e.at }));
-    const msgDocs = await ctx.db
-      .query("messages")
-      .withIndex("by_event_seq", (q) => q.gt("event_seq", cursor))
-      .collect();
-    const messages: FeedMessage[] = msgDocs.map((m) => ({ message_id: m._id, role: m.role, body: m.body, status: m.status, at: m.at }));
-    return { cursor: await currentCursor(ctx), messages, events };
+/**
+ * Bounded, owner-guarded recent-event feed for the chat's system-line rows.
+ *
+ * Replaces the removed `getUpdates`, which returned the ENTIRE event log after a
+ * cursor (the "open at the top of hundreds of rows" failure mode) and served no
+ * live caller. This returns only the most recent `limit` events in chronological
+ * (oldest→newest) order, so the chat backend can map each `FeedEvent` through
+ * `describeSystemEvent` / `isSystemLineKind` and render `SystemEventRow` lines
+ * without loading history unbounded.
+ */
+export const listRecentEvents = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<FeedEvent[]> => {
+    await requireOwner(ctx);
+    const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
+    const rows = await ctx.db.query("events").withIndex("by_seq").order("desc").take(limit);
+    return rows
+      .reverse()
+      .map((e) => ({ seq: e.seq, kind: e.kind, actor: e.actor, refs: e.refs, at: e.at }));
   },
 });
 
@@ -166,7 +195,7 @@ export const getUpdates = query({
  * at 0 and re-mirror every historical human turn. Delivery is durable via
  * `messages.agent_delivered_at` (set by `ackHumanMessages`).
  */
-export const pendingWork = query({
+export const pendingWork = internalQuery({
   args: { cursor: v.optional(v.number()) },
   handler: async (ctx, args): Promise<UpdatesResponse> => {
     const cursor = args.cursor ?? 0;
@@ -186,7 +215,14 @@ export const pendingWork = query({
 });
 
 function feedMessageOf(m: Doc<"messages">): FeedMessage {
-  return { message_id: m._id, role: m.role, body: m.body, status: m.status, at: m.at };
+  return {
+    message_id: m._id,
+    role: m.role,
+    body: m.body,
+    status: m.status,
+    at: m.at,
+    attachments: m.attachments,
+  };
 }
 
 /**
@@ -278,6 +314,7 @@ async function collectTranscriptPage(
 export const listRecentMessages = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args): Promise<ChatPage> => {
+    await requireOwner(ctx);
     const limit = Math.min(Math.max(args.limit ?? 40, 1), 100);
     const { rows: newestFirst, has_more } = await collectTranscriptPage(ctx, { limit });
     const chronological = newestFirst.slice().reverse();
@@ -295,6 +332,7 @@ export const listRecentMessages = query({
 export const listMessagesBefore = query({
   args: { before_event_seq: v.number(), limit: v.optional(v.number()) },
   handler: async (ctx, args): Promise<ChatPage> => {
+    await requireOwner(ctx);
     const limit = Math.min(Math.max(args.limit ?? 40, 1), 100);
     const { rows: newestFirst, has_more } = await collectTranscriptPage(ctx, {
       limit,
@@ -356,10 +394,16 @@ export const restoreArtifact = mutation({
   },
 });
 
-/** Bootstrap: Workspace tab + attach orphan artifacts (CLI / tooling). */
+/**
+ * Bootstrap: Workspace tab + attach orphan artifacts (owner CLI / tooling).
+ * Owner-guarded — this is a public mutation the browser API exposes, so an
+ * anonymous caller must not be able to mint tabs or re-parent artifacts. The
+ * actual work stays in the internal mutation; this is the authenticated seam.
+ */
 export const ensureWorkspace = mutation({
   args: {},
   handler: async (ctx): Promise<{ tab_id: string; assigned: number }> => {
+    await requireOwner(ctx);
     return await ctx.runMutation(internal.agentWrites.ensureWorkspace, {});
   },
 });

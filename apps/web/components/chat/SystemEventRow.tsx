@@ -12,6 +12,7 @@
 
 import { Text } from "@hermes/ui";
 import type { StatusTone } from "@hermes/ui";
+import { memo } from "react";
 import type { CSSProperties } from "react";
 import type { SystemEvent } from "./types";
 
@@ -35,7 +36,7 @@ export interface SystemEventRowProps {
   event: SystemEvent;
 }
 
-export function SystemEventRow({ event }: SystemEventRowProps) {
+function SystemEventRowImpl({ event }: SystemEventRowProps) {
   const tone = toneFor(event);
   const isAlert = tone === "danger";
   return (
@@ -58,3 +59,9 @@ export function SystemEventRow({ event }: SystemEventRowProps) {
     </div>
   );
 }
+
+/** Memoized on event identity — a system row never restreams, so it's a hot-path win. */
+export const SystemEventRow = memo(
+  SystemEventRowImpl,
+  (prev, next) => prev.event.id === next.event.id && prev.event.summary === next.event.summary,
+);
