@@ -69,9 +69,17 @@ for (const file of files) {
   if (/(^|\/)\.env\.example$/.test(file)) continue;
   if (/(^|\/)scripts\/check-secrets\.mjs$/.test(file)) continue; // this file defines the patterns
 
+  // Scan line-by-line so we can report the location and honor an explicit,
+  // auditable inline suppression for known-safe fixtures/placeholders.
+  const lines = content.split("\n");
   for (const { name, re } of SECRET_PATTERNS) {
-    if (re.test(content)) {
-      findings.push(`possible ${name} in ${file} (${REDACTED})`);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!re.test(line)) continue;
+      // `check-secrets-allow` on the same line is a documented, reviewable
+      // exception (e.g. a fabricated secret used only as a test fixture).
+      if (line.includes("check-secrets-allow")) continue;
+      findings.push(`possible ${name} in ${file}:${i + 1} (${REDACTED})`);
     }
   }
 }
