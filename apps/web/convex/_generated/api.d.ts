@@ -17,6 +17,7 @@ import type * as files from "../files.js";
 import type * as flags from "../flags.js";
 import type * as http from "../http.js";
 import type * as human from "../human.js";
+import type * as jobs from "../jobs.js";
 import type * as lastSeen from "../lastSeen.js";
 import type * as lib_agentAuth from "../lib/agentAuth.js";
 import type * as lib_outcome from "../lib/outcome.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   flags: typeof flags;
   http: typeof http;
   human: typeof human;
+  jobs: typeof jobs;
   lastSeen: typeof lastSeen;
   "lib/agentAuth": typeof lib_agentAuth;
   "lib/outcome": typeof lib_outcome;

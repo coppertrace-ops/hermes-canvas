@@ -275,8 +275,44 @@ read-only without `onEdit`. `ArtifactPane` renders `board` behind `useFlags().bo
 | Flags-off smoke unchanged | `BASE_URL=http://localhost:3300 node e2e/browser-smoke.mjs` | 2026-07-14 | 0 | `✅ BROWSER SMOKE PASSED — 23 checks` |
 | Secrets + sandbox guards | `pnpm check:secrets` · `node scripts/check-sandbox-grep.mjs` | 2026-07-14 | 0 | `check-secrets: OK` · `check-sandbox-grep: OK` |
 
-## WP8 — Jobs tab
-_pending_
+## WP8 — Jobs tab + overdue + metrics card
+
+Branch: `wave2-fable`. Third right-pane view behind the `jobs_tab` flag (default OFF).
+
+`jobs.listJobs` (browser, owner-gated live query): jobs + their runs (newest-first,
+≤25/job). The agent registration/report path (`PUT/POST /agent/jobs/*` →
+`registerJob`/`reportRun`) already existed from P1. Client-side (`components/jobs`):
+dependency-free 5-field cron parser (`parseCron`/`describeCron`/`nextRun`/
+`estimateIntervalMs`), overdue math (`evaluateJob`) using WARDEN's
+`LIMITS.JOBS_GRACE_*` (proportional grace, 10-min floor) — a job whose schedule
+fired + grace ago with no report shows "missed / not reporting"; `summarizeJobs`
+drives the scheduler-health metrics card (jobs/overdue/failing/paused/runs). Wired
+as a `jobs_tab`-gated view in `IntegrationApp` (falls back to canvas if the flag
+flips off mid-session). `jobs` module registered in the hand-maintained generated
+api (F2 will regenerate identically).
+
+| Criterion | Command | Date | Exit | Evidence |
+|---|---|---|---|---|
+| `listJobs`: owner-gated, jobs+runs newest-first bounded, anon reject, empty ⇒ `[]` | `pnpm --filter @hermes/web test` | 2026-07-14 | 0 | `jobs.test.ts (3 tests)` |
+| Cron parse/next-run/describe (forms, out-of-range reject, weekday skip, dow-7, interval) | same run | 2026-07-14 | 0 | `cron.test.ts (11 tests)` |
+| Overdue detection: ok / overdue / never-run / paused / unparsable; grace math; summary | same run | 2026-07-14 | 0 | `overdue.test.ts (9 tests)` |
+| Jobs view: health card, schedule, overdue badge, run history + log_tail, honest empty/loading | same run | 2026-07-14 | 0 | `jobs.smoke.test.tsx (3 tests)` — `Test Files 30 passed · Tests 241 passed` |
+| Lint + typecheck + test (all pkgs) | `pnpm check` | 2026-07-14 | 0 | `28 successful, 28 total` |
+| Flags-off smoke unchanged (jobs view hidden) | `BASE_URL=http://localhost:3300 node e2e/browser-smoke.mjs` | 2026-07-14 | 0 | `✅ BROWSER SMOKE PASSED — 23 checks` |
+| Secrets + sandbox guards | `pnpm check:secrets` · `node scripts/check-sandbox-grep.mjs` | 2026-07-14 | 0 | `OK` · `OK` |
+
+## G6 — Boards + jobs validation
+
+Branch: `wave2-fable`. Covered by WP7 + WP8 evidence above (both behind default-OFF
+flags; prod flips Frank-gated F4).
+
+| G6 criterion (plan §8) | Evidence |
+|---|---|
+| Agent creates/updates a board via API + human drags a card → both land as versions | `editBoard.test.ts` (human append-only) + existing `agentWrites.updateArtifact` (agent path); both route through `planUpdateArtifact` |
+| Simultaneous human+agent board edit → contended + merge prompt (not silent loss) | `editBoard.test.ts` "flags a stale parent_seq contended (both writes land)"; UI surfaces via existing `MergePrompt` |
+| Job registered + run reported via API appears live | `jobs.test.ts` "returns registered jobs with their runs" |
+| A job that stops reporting shows overdue within its grace window | `overdue.test.ts` "OVERDUE when the schedule fired long ago"; `jobs.smoke.test.tsx` renders the badge |
+| Board diff renders add/move/remove correctly | `boardOps.test.ts` "reads back as a single MOVE" + existing `@hermes/diff` `board.test.ts` |
 
 ## G6 — Boards + jobs validation
 _pending_

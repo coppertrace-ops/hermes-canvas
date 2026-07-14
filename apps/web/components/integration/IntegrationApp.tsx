@@ -39,9 +39,11 @@ import { useConvexHistoryAdapter } from "./useConvexHistoryAdapter";
 import { createConvexChatBackend } from "./convexChatBackend";
 import { buildDemoChatItems } from "./demoSeed";
 import { ReadershipPanel } from "../metrics";
+import { JobsPanel } from "../jobs";
+import { useFlags } from "../flags";
 import { bannerFor, resolveWorkspaceMode, type BannerCopy } from "./workspaceMode";
 
-type View = "canvas" | "history";
+type View = "canvas" | "history" | "jobs";
 
 /**
  * The Convex HTTP-action origin (`*.convex.site`), where `/attachments/:id` is
@@ -66,7 +68,15 @@ function Brand() {
   );
 }
 
-function ViewSwitch({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+function ViewSwitch({
+  view,
+  onChange,
+  showJobs,
+}: {
+  view: View;
+  onChange: (v: View) => void;
+  showJobs: boolean;
+}) {
   return (
     <div className="hc-viewswitch" role="group" aria-label="Right pane view">
       <button
@@ -85,6 +95,16 @@ function ViewSwitch({ view, onChange }: { view: View; onChange: (v: View) => voi
       >
         History
       </button>
+      {showJobs && (
+        <button
+          type="button"
+          className="hc-viewswitch__btn"
+          aria-pressed={view === "jobs"}
+          onClick={() => onChange("jobs")}
+        >
+          Jobs
+        </button>
+      )}
     </div>
   );
 }
@@ -122,6 +142,7 @@ function WorkspaceView({
   historyAdapter,
   readership,
   onEditBoard,
+  jobs,
 }: {
   banner: BannerCopy;
   statusLabel: string;
@@ -135,18 +156,24 @@ function WorkspaceView({
   readership?: ReactNode;
   /** Live board-edit commit (P6). Omitted in demo (boards flag is off there). */
   onEditBoard?: EditBoardFn;
+  /** Live Jobs tab (P6). Shown as a third view only when `jobs_tab` is on. */
+  jobs?: ReactNode;
 }) {
   const [view, setView] = useState<View>("canvas");
   // Flag-gated sandbox previews for HTML diffs (WP5): defined only when
   // `html_artifacts` is on; otherwise HtmlDiffView keeps its honest pending slot.
   const renderHtmlPreview = useHtmlPreviewRenderer();
+  const { jobs_tab } = useFlags();
+  const showJobs = jobs_tab && jobs !== undefined;
+  // If the jobs flag flips off while the jobs view is active, fall back to canvas.
+  const effectiveView: View = view === "jobs" && !showJobs ? "canvas" : view;
 
   const header = useMemo(
     () => (
       <div className="hc-header">
         <Brand />
         <div className="hc-header__spacer" />
-        <ViewSwitch view={view} onChange={setView} />
+        <ViewSwitch view={effectiveView} onChange={setView} showJobs={showJobs} />
         <div className="hc-header__spacer" />
         <div className="hc-header__controls">
           <span
@@ -162,11 +189,13 @@ function WorkspaceView({
         </div>
       </div>
     ),
-    [view, statusLabel, statusTone],
+    [effectiveView, statusLabel, statusTone, showJobs],
   );
 
   const rightPane =
-    view === "canvas" ? (
+    effectiveView === "jobs" ? (
+      <div className="hc-history-region">{jobs}</div>
+    ) : effectiveView === "canvas" ? (
       <div className="hc-pane-fill">
         <CanvasShell
           adapter={canvasAdapter}
@@ -274,6 +303,7 @@ function LiveWorkspace() {
       historyAdapter={historyAdapter}
       readership={<ReadershipPanel />}
       onEditBoard={onEditBoard}
+      jobs={<JobsPanel />}
     />
   );
 }
