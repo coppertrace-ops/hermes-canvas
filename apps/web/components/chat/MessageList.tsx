@@ -118,7 +118,7 @@ export function MessageList({
   /** When set, restore scrollTop after a prepend so the anchor message stays put. */
   const pendingRestoreHeight = useRef<number | null>(null);
 
-  const handleScroll = () => {
+  const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     if (
@@ -130,7 +130,7 @@ export function MessageList({
       pendingRestoreHeight.current = el.scrollHeight;
       onLoadOlder();
     }
-  };
+  }, [hasMoreOlder, onLoadOlder, scrollRef]);
 
   // A prepend grows the list at the top; the user is scrolled up (not sticking),
   // so add the height delta to keep the same message under the viewport.
