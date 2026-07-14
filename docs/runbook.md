@@ -98,6 +98,44 @@ it can never take effect on a deployed owner environment.
   commit. Schema changes after G1 are additive-only (the auth tables were added
   additively).
 
+## 9. Flip a feature flag (Wave 2 — the fast rollback lever, spec §1)
+
+Three server-side flags gate the Wave 2 surfaces: `html_artifacts`, `boards`,
+`jobs_tab`. **All default OFF** (an absent row = off; the code never defaults on).
+The UI subscribes to `flags.getFlags` as a live query, so a flip takes effect
+**without a redeploy** — flipping a flag off is the seconds-fast first response to
+a regression in its surface (§ rollback posture in `02-wave2-implementation-plan.md`).
+
+Only the authenticated owner can flip a flag; the `/agent/*` service path cannot.
+Every flip writes a `flag_changed` audit event in the same mutation.
+
+**Flip via `npx convex run`** (against the target deployment; env selects prod vs
+dev — see §8):
+
+```bash
+# Enable a flag
+npx convex run flags:setFlag '{"key":"html_artifacts","enabled":true}'
+# Disable a flag (rollback)
+npx convex run flags:setFlag '{"key":"boards","enabled":false}'
+# Read current state
+npx convex run flags:getFlags '{}'
+```
+
+`setFlag` is `requireOwner`-gated, so `convex run` must carry the owner identity
+(run authenticated against the deployment, or in a non-production deployment with
+the demo bypass — §7 — for local testing). An unknown key is rejected; the closed
+set is `html_artifacts | boards | jobs_tab`.
+
+**After every prod flip:** verify the `flag_changed` audit event landed
+(`npx convex run flags:getFlags '{}'` shows the new state) and run the browser
+smoke against the surface. Flag flips **in production are Frank-gated (F4)** — one
+flag at a time, audit + smoke after each.
+
+Note: flags gate *rendering/mounting* of risky surfaces, **not** data ingestion.
+An `html-static`/`board` artifact written while a flag was on stays stored
+(append-only) and re-renders when the flag returns; the `/agent/*` endpoints keep
+accepting writes/reports regardless of flag state.
+
 ## Owner authorization on browser-only writes (DONE — WARDEN, `wave1/authz-guards`)
 
 The reusable owner guard is `convex/authGuard.ts::requireOwner`. It is now applied

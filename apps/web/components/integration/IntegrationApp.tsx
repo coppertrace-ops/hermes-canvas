@@ -31,6 +31,7 @@ import { HistoryPanel, useMockHistoryAdapter } from "../history";
 import type { HistoryAdapter } from "../history";
 import { api } from "../../convex/_generated/api";
 import { useHasConvex } from "../../app/providers";
+import { FlagsProvider } from "../flags";
 import { useDemoCanvasAdapter } from "./useDemoCanvasAdapter";
 import { useConvexCanvasAdapter } from "./useConvexCanvasAdapter";
 import { useConvexHistoryAdapter } from "./useConvexHistoryAdapter";
@@ -315,5 +316,7 @@ function useConnectTimeout(ms: number): boolean {
 
 export function IntegrationApp() {
   const hasConvex = useHasConvex();
-  return hasConvex ? <ConvexWorkspace /> : <DemoWorkspace connected={false} />;
+  return (
+    <FlagsProvider>{hasConvex ? <ConvexWorkspace /> : <DemoWorkspace connected={false} />}</FlagsProvider>
+  );
 }

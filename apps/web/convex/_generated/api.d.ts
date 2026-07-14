@@ -14,6 +14,7 @@ import type * as authGuard from "../authGuard.js";
 import type * as authPolicy from "../authPolicy.js";
 import type * as canvas from "../canvas.js";
 import type * as files from "../files.js";
+import type * as flags from "../flags.js";
 import type * as http from "../http.js";
 import type * as human from "../human.js";
 import type * as lastSeen from "../lastSeen.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   authPolicy: typeof authPolicy;
   canvas: typeof canvas;
   files: typeof files;
+  flags: typeof flags;
   http: typeof http;
   human: typeof human;
   lastSeen: typeof lastSeen;

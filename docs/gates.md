@@ -38,7 +38,46 @@ The first re-run smoke timed out waiting for seed text. Root cause: a **stale le
 ---
 
 ## WP1 — Feature-flag subsystem
-_pending_
+
+Branch: `wave2/wp1-flags` (off `wave2/wp0-triage` baseline — see note).
+
+Implemented per spec §1: `flags` table (`by_key` index), `events.kind` widened with
+`flag_changed` (+ `refs.flag_key`/`refs.enabled`, additive), `flags.getFlags` public
+live query (default-off), `flags.setFlag` owner-gated mutation (closed-key-set
+validation, upsert + atomic `flag_changed` audit event), shared flag contract in
+`@hermes/contract` (`FLAG_KEYS`/`FlagKey`/`FlagState`/`isFlagKey`/`flagsAllOff`/
+`normalizeFlags`), web `useFlags()` hook via `FlagsProvider` (default-off context;
+live only under a Convex provider; all-off in demo), chat `flag_changed` audit line,
+runbook §9 "Flip a feature flag".
+
+| Criterion | Command | Date | Exit | Evidence |
+|---|---|---|---|---|
+| Convex flag specs (owner-only flip, atomic event, absent=off, unknown-key reject, agent/anon reject) | `pnpm --filter @hermes/web test` | 2026-07-14 | 0 | `Test Files 20 passed (20) · Tests 173 passed (173)`; `convex/flags.test.ts (6 tests)` |
+| Contract flag-helper units | `pnpm check` (`@hermes/contract` test) | 2026-07-14 | 0 | `packages/contract/src/flags.test.ts` (8 assertions: closed set, default-off, normalize) |
+| Lint + typecheck + test (all pkgs) | `pnpm check` | 2026-07-14 | 0 | `28 successful, 28 total` |
+| Flags-off smoke byte-identical | `BASE_URL=http://localhost:3300 node e2e/browser-smoke.mjs` | 2026-07-14 | 0 | `✅ BROWSER SMOKE PASSED — 23 checks` (demo mode → all flags off; FlagsProvider adds no behavior) |
+| Secrets scan | `pnpm check:secrets` | 2026-07-14 | 0 | `check-secrets: OK` |
+
+**Acceptance criteria (spec §1) → evidence:**
+- *flip requires owner (anon + agent-path rejected)* → `flags.test.ts` "rejects an anonymous / agent-path caller and writes nothing" (throws `owner sign-in required`; 0 rows, 0 events). The `/agent/*` path has no user identity, so the same `requireOwner` gate blocks it; `setFlag` is a public mutation, unreachable as an internal function from the service layer.
+- *flip writes event in same mutation* → "writes exactly one flag_changed event carrying {flag_key, enabled} as human" (1 event, `kind=flag_changed`, `actor=human`).
+- *absent row reads as off* → `getFlags — default OFF` (`{html_artifacts:false, boards:false, jobs_tab:false}` on empty backend).
+- *unknown key rejected* → "rejects an unknown key and writes nothing" (throws `unknown flag key`; 0 rows, 0 events).
+- *toggle upserts, never duplicates* → "upserts (never duplicates) a row and audits each flip" (1 row after enable→disable; 2 audit events).
+
+**Codegen note:** `apps/web/convex/_generated/api.d.ts` was hand-edited to register
+the `flags` module (add the import + `fullApi` entry) because `convex codegen`
+requires a `CONVEX_DEPLOYMENT` (F2, Frank-gated) and cannot run offline here.
+`dataModel.d.ts` derives from `typeof schema`, so the new `flags` table + widened
+`events` flow automatically; `api.js` uses `anyApi` (dynamic) and needed no edit.
+When the prod/dev deployment exists, `npx convex dev`/`codegen` will regenerate
+these identically.
+
+**Branch lineage note:** WP0's baseline fixes (commits `1b39e30`, `fd8ce0a`,
+`c6fe640`) live on `wave2/wp0-triage`, not `main`. Since WP0 is the entry condition
+for all Wave 2 work, `wave2/wp1-flags` is branched off that green baseline rather
+than off `main` (which lacks it). Integration onto `wave2-integration` will carry
+the WP0 baseline forward.
 
 ## WP2 — packages/policy
 _pending_

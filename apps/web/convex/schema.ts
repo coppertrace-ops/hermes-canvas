@@ -90,6 +90,8 @@ export default defineSchema({
       v.literal("job_run"),
       v.literal("auth"),
       v.literal("limit_rejected"),
+      // Wave 2 (additive union widening): owner flipped a feature flag.
+      v.literal("flag_changed"),
     ),
     actor: v.union(v.literal("human"), v.literal("agent"), v.literal("system")),
     refs: v.object({
@@ -101,6 +103,10 @@ export default defineSchema({
       // On a `limit_rejected` event, the true ApiError code (oversize, not_found,
       // validation_failed, …). Additive; the frozen kind union is unchanged.
       rejected_code: v.optional(v.string()),
+      // On a `flag_changed` event: which flag flipped and to what state.
+      // Additive/optional; existing rows set neither and stay valid.
+      flag_key: v.optional(v.string()),
+      enabled: v.optional(v.boolean()),
     }),
     at: v.number(),
   }).index("by_seq", ["seq"]),
@@ -110,6 +116,18 @@ export default defineSchema({
     name: v.string(),
     value: v.number(),
   }).index("by_name", ["name"]),
+
+  /**
+   * Server-side feature flags (Wave 2, spec §1; OWNER: LEDGER). One row per
+   * flipped flag; an ABSENT row means OFF (the code never defaults to on). Only
+   * the authenticated owner flips one (`flags.setFlag`), and every flip writes a
+   * `flag_changed` event in the same mutation. Additive-only (plan §9).
+   */
+  flags: defineTable({
+    key: v.string(),
+    enabled: v.boolean(),
+    updated_at: v.number(),
+  }).index("by_key", ["key"]),
 
   messages: defineTable({
     role: v.union(v.literal("human"), v.literal("agent")),

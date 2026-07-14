@@ -16,6 +16,7 @@ export * from "./artifact";
 export * from "./board";
 export * from "./edit";
 export * from "./events";
+export * from "./flags";
 export * from "./resolvedAction";
 export * from "./job";
 export * from "./tab";
