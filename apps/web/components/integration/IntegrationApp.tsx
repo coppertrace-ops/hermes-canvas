@@ -24,7 +24,7 @@ import { AppShell, StatusDot, Text, ThemeToggle } from "@hermes/ui";
 import type { StatusTone } from "@hermes/ui";
 import { SplitPane } from "@hermes/render";
 import type { CanvasDataAdapter } from "@hermes/render";
-import { CanvasShell } from "../canvas";
+import { CanvasShell, useHtmlPreviewRenderer } from "../canvas";
 import { ChatPane, ChatProvider, MockChatPane, createMockChatBackend } from "../chat";
 import type { ChatBackend } from "../chat";
 import { HistoryPanel, useMockHistoryAdapter } from "../history";
@@ -133,6 +133,9 @@ function WorkspaceView({
   readership?: ReactNode;
 }) {
   const [view, setView] = useState<View>("canvas");
+  // Flag-gated sandbox previews for HTML diffs (WP5): defined only when
+  // `html_artifacts` is on; otherwise HtmlDiffView keeps its honest pending slot.
+  const renderHtmlPreview = useHtmlPreviewRenderer();
 
   const header = useMemo(
     () => (
@@ -171,7 +174,7 @@ function WorkspaceView({
     ) : (
       <div className="hc-history-region">
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--hc-space-4)" }}>
-          <HistoryPanel adapter={historyAdapter} />
+          <HistoryPanel adapter={historyAdapter} renderHtmlPreview={renderHtmlPreview} />
           {readership}
         </div>
       </div>

@@ -5,6 +5,7 @@ import { contendedVersions } from "@hermes/diff";
 import { Button, cssVar, Panel, Spinner, Text } from "@hermes/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DiffView } from "./DiffView";
+import type { HtmlPreviewRenderer } from "./HtmlDiffView";
 import { MetricsProvider, useReadership } from "./instrumentation";
 import { MergePrompt } from "./MergePrompt";
 import { RestoreConfirm } from "./RestoreConfirm";
@@ -25,17 +26,22 @@ import { VersionTimeline } from "./VersionTimeline";
 
 export interface HistoryPanelProps {
   adapter: HistoryAdapter;
+  /**
+   * Sandbox preview renderer for HTML diffs (Wave 2 P5). Injected by integration
+   * (flag-gated); when absent, `HtmlDiffView` shows its honest pending slot.
+   */
+  renderHtmlPreview?: HtmlPreviewRenderer;
 }
 
-export function HistoryPanel({ adapter }: HistoryPanelProps) {
+export function HistoryPanel({ adapter, renderHtmlPreview }: HistoryPanelProps) {
   return (
     <MetricsProvider value={adapter.metrics ?? { record: () => {} }}>
-      <HistoryPanelInner adapter={adapter} />
+      <HistoryPanelInner adapter={adapter} renderHtmlPreview={renderHtmlPreview} />
     </MetricsProvider>
   );
 }
 
-function HistoryPanelInner({ adapter }: HistoryPanelProps) {
+function HistoryPanelInner({ adapter, renderHtmlPreview }: HistoryPanelProps) {
   const { load, actions } = adapter;
 
   if (load.status === "loading") {
@@ -79,15 +85,17 @@ function HistoryPanelInner({ adapter }: HistoryPanelProps) {
     );
   }
 
-  return <HistoryReady data={load.data} actions={actions} />;
+  return <HistoryReady data={load.data} actions={actions} renderHtmlPreview={renderHtmlPreview} />;
 }
 
 function HistoryReady({
   data,
   actions,
+  renderHtmlPreview,
 }: {
   data: HistoryData;
   actions: HistoryAdapter["actions"];
+  renderHtmlPreview?: HtmlPreviewRenderer;
 }) {
   const readership = useReadership();
   const bySeq = useMemo(
@@ -211,7 +219,12 @@ function HistoryReady({
         }
       >
         {selected ? (
-          <DiffView type={data.type} before={before} after={selected} />
+          <DiffView
+            type={data.type}
+            before={before}
+            after={selected}
+            renderHtmlPreview={renderHtmlPreview}
+          />
         ) : (
           <Text size="sm" tone="tertiary">
             Select a version from the timeline to see what changed.

@@ -187,7 +187,32 @@ no untrusted-HTML injection surface (Markdown sanitized, no raw-HTML passthrough
 `docs/threat-model.md` (WP10).
 
 ## WP5 — HTML artifact host tile
-_pending_
+
+Branch: `wave2-fable` (off `wave2/wp4-app-csp` head; agent: Fable 5).
+
+`HtmlArtifactHost` (PANES) mounts the WARDEN content shell: iframe with
+`sandbox={FRAME_SANDBOX_ATTR}` verbatim (`allow-scripts` only, no `allow`
+attr, `referrerPolicy="no-referrer"`), src = `NEXT_PUBLIC_CONTENT_ORIGIN`
+(default drift-guarded against `appCspHostsFromEnv` frame-src). All protocol
+decisions live in DOM-free `htmlFrameHost.ts::createFrameHost` (parent side of
+`@hermes/policy` frameProtocol): render posted only after source-identity-
+verified `ready` (downward targetOrigin `"*"` — the opaque-origin recipient
+can never match a concrete origin; identity rests on `event.source`), height
+clamped [48, 8000] px, `render_error`/ready-timeout are explicit states showing
+the raw source — never a silent blank. Wired: `ArtifactPane` renders
+`html-static` behind `useFlags().html_artifacts` (off ⇒ honest disabled state
+naming the flag); `HistoryPanel` gains optional `renderHtmlPreview` threaded to
+`HtmlDiffView`'s slot; `IntegrationApp` injects the flag-gated renderer;
+history previews are click-to-activate (`HtmlPreviewActivate`, performance
+rule: never two auto-mounted live iframes).
+
+| Criterion | Command | Date | Exit | Evidence |
+|---|---|---|---|---|
+| Frame-host controller specs (handshake, hostile/foreign messages, tripwire count, height clamp, error/timeout states, origin drift guard, sandbox-token floor) | `pnpm --filter @hermes/web test` | 2026-07-14 | 0 | `Test Files 23 passed (23) · Tests 202 passed (202)`; `htmlFrameHost.test.ts` (16 tests), `htmlHost.smoke.test.tsx` (4 tests) |
+| Render smokes (exact sandbox attr, flag-off disabled state, activate affordance) | same run | 2026-07-14 | 0 | `htmlHost.smoke.test.tsx` asserts `sandbox="allow-scripts"`, no `allow-same-origin`, no iframe when flag off / preview inactive |
+| Lint + typecheck + test (all pkgs) | `pnpm check` | 2026-07-14 | 0 | `28 successful, 28 total` |
+| Flags-off smoke unchanged | `BASE_URL=http://localhost:3300 node e2e/browser-smoke.mjs` | 2026-07-14 | 0 | `✅ BROWSER SMOKE PASSED — 23 checks` (demo mode, all flags off) |
+| Secrets scan | `pnpm check:secrets` | 2026-07-14 | 0 | `check-secrets: OK` |
 
 ## G5 — Sandboxed HTML security audit (WARDEN sole sign-off)
 _pending — `html_artifacts` flag stays OFF everywhere until this is green with evidence_

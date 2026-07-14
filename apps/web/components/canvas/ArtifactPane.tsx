@@ -11,16 +11,20 @@ import {
 import type {
   ArtifactContentState,
   CanvasArtifactView,
+  ArtifactVersionView,
   MarkdownPolicy,
   MermaidEngine,
 } from "@hermes/render";
+import { useFlags } from "../flags";
+import { HtmlArtifactHost } from "./HtmlArtifactHost";
 
 /**
  * Artifact pane (PANES; plan §7). Renders the focused artifact's content by
  * type, wrapped in the honest empty/loading/error states. Markdown and Mermaid
- * are live in Phase 3; `board` and `html-static` are sequenced behind later
- * gates (P5/P6) and show a neutral "not available in this phase" state rather
- * than a blank or a crash.
+ * are live since Phase 3. `html-static` mounts WARDEN's sandbox host behind the
+ * server-side `html_artifacts` flag (Wave 2 P5); flag off ⇒ an honest disabled
+ * state naming the flag, never a blank or a crash. `board` follows in P6 behind
+ * its own flag.
  */
 export interface ArtifactPaneProps {
   /** The focused artifact's summary, or null when nothing is selected. */
@@ -96,8 +100,9 @@ function ArtifactBody({ artifact, content, mermaidEngine, markdownPolicy }: Arti
               serverRenderError={version.renderState === "render_error"}
             />
           );
-        case "board":
         case "html-static":
+          return <HtmlStaticBody artifact={artifact} version={version} />;
+        case "board":
           return (
             <ArtifactEmpty
               icon={null}
@@ -108,4 +113,36 @@ function ArtifactBody({ artifact, content, mermaidEngine, markdownPolicy }: Arti
       }
     }
   }
+}
+
+/**
+ * `html-static` body — the flag seam for the P5 sandbox tile. The flag gates
+ * RENDERING only (runbook §9): the stored content is untouched either way, and
+ * a flip takes effect live via the `getFlags` subscription without a redeploy.
+ */
+function HtmlStaticBody({
+  artifact,
+  version,
+}: {
+  artifact: CanvasArtifactView;
+  version: ArtifactVersionView;
+}) {
+  const { html_artifacts } = useFlags();
+  if (!html_artifacts) {
+    return (
+      <ArtifactEmpty
+        icon={null}
+        title="HTML artifacts are disabled"
+        description="The server-side html_artifacts flag is off. This artifact's source is stored and versioned; it renders in the sandboxed frame once the flag is enabled (owner-only, audited)."
+      />
+    );
+  }
+  return (
+    <HtmlArtifactHost
+      html={version.content}
+      artifactId={artifact.id}
+      seq={version.seq}
+      title={`Sandboxed HTML artifact: ${artifact.title}`}
+    />
+  );
 }
