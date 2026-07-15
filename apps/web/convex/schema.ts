@@ -205,6 +205,55 @@ export default defineSchema({
     .index("by_job_run", ["job_key", "run_id"]),
 
   // -------------------------------------------------------------------------
+  // SETTINGS surface (OWNER: LEDGER). Plugin-infrastructure state reported by the
+  // external Hermes gateway over the service-token `/agent/*` path and read back
+  // by the owner's Settings panel. Additive-only (plan §9); neither table carries
+  // the append-only invariant (that protects `versions`/`events`).
+  // -------------------------------------------------------------------------
+
+  /**
+   * The gateway's self-reported runtime state — a SINGLETON (one row, upserted by
+   * `PUT /agent/status`). `reported_at` is server-stamped on each write. No index:
+   * a single row is read with `.first()`.
+   */
+  agent_status: defineTable({
+    model: v.string(),
+    provider: v.string(),
+    effort: v.optional(v.string()),
+    fallbacks: v.optional(v.array(v.string())),
+    context: v.optional(
+      v.object({ used_tokens: v.optional(v.number()), max_tokens: v.optional(v.number()) }),
+    ),
+    gateway: v.optional(
+      v.object({ version: v.optional(v.string()), uptime_s: v.optional(v.number()) }),
+    ),
+    toolsets: v.optional(v.array(v.string())),
+    platforms: v.optional(v.array(v.string())),
+    sessions_active: v.optional(v.number()),
+    memory: v.optional(
+      v.object({ provider: v.optional(v.string()), recall_budget: v.optional(v.number()) }),
+    ),
+    reported_at: v.number(), // server-stamped ms
+  }),
+
+  /**
+   * A read-only MIRROR of the host's memory store, synced in bulk by
+   * `PUT /agent/memory` and keyed by the host's stable `entry_id`. Because this is
+   * a mirror (not a ledger), a `full:true` sync may DELETE local rows the host no
+   * longer has — that does not violate the append-only invariant, which protects
+   * `versions`/`events`, never this table. `synced_at` is server-stamped.
+   */
+  memories: defineTable({
+    entry_id: v.string(), // the host's stable id
+    content: v.string(),
+    tags: v.optional(v.array(v.string())),
+    source: v.optional(v.string()),
+    created_at: v.optional(v.number()),
+    updated_at: v.optional(v.number()),
+    synced_at: v.number(), // server-stamped ms
+  }).index("by_entry_id", ["entry_id"]),
+
+  // -------------------------------------------------------------------------
   // CHRONICLE (plan §3 changed-since-last-looked; §8 G4 readership test).
   // Additive-only tables (plan §9), owned by CHRONICLE and consumed only by
   // `lastSeen.ts` / `metrics.ts`. Kept here because Convex derives its single

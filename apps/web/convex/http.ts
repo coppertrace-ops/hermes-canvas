@@ -1,10 +1,14 @@
 import type { ApiError } from "@hermes/contract";
 import {
+  AGENT_STATUS_BODY_MAX_BYTES,
+  agentStatusSchema,
   archiveArtifactSchema,
+  byteLength,
   createArtifactSchema,
   createTabSchema,
   ERROR_STATUS,
   jobRegistrationSchema,
+  memorySyncSchema,
   patchTabSchema,
   postMessageSchema,
   runReportSchema,
@@ -50,6 +54,45 @@ async function parseBody<T>(request: Request, schema: z.ZodType<T>): Promise<{ o
   let raw: unknown;
   try {
     raw = await request.json();
+  } catch {
+    return { ok: false, response: errorResponse({ code: "validation_failed", message: "body is not valid JSON" }) };
+  }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      response: errorResponse({ code: "validation_failed", message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "), detail: { issues: parsed.error.issues } }),
+    };
+  }
+  return { ok: true, data: parsed.data };
+}
+
+/**
+ * Like `parseBody`, but first rejects a body whose raw UTF-8 size exceeds
+ * `maxBytes` with a structured `oversize` error naming the cap (never a silent
+ * truncation). Used for the fixed-size infra reporting bodies (`/agent/status`).
+ */
+async function parseCappedBody<T>(
+  request: Request,
+  schema: z.ZodType<T>,
+  maxBytes: number,
+  limitName: string,
+): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
+  const rawText = await request.text();
+  const size = byteLength(rawText);
+  if (size > maxBytes) {
+    return {
+      ok: false,
+      response: errorResponse({
+        code: "oversize",
+        message: `body exceeds ${limitName} (${size} bytes > limit ${maxBytes} bytes)`,
+        detail: { limit: limitName, limit_value: maxBytes, actual: size, unit: "bytes" },
+      }),
+    };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(rawText);
   } catch {
     return { ok: false, response: errorResponse({ code: "validation_failed", message: "body is not valid JSON" }) };
   }
@@ -338,6 +381,40 @@ http.route({
     const id = new URL(request.url).pathname.slice(AGENT_ATTACHMENT_PREFIX.length);
     if (!id) return errorResponse({ code: "not_found", message: "attachment id required" });
     return respondWithAttachment(ctx, id);
+  }),
+});
+
+// --- PUT /agent/status — gateway self-report (plugin infrastructure) --------
+// NOT a model tool: the Hermes gateway reports its own runtime state here. Upserts
+// a singleton; the mutation server-stamps reported_at. Body is size-capped.
+http.route({
+  path: "/agent/status",
+  method: "PUT",
+  handler: httpAction(async (ctx, request) => {
+    if (!(await verifyServiceToken(request.headers.get("Authorization")))) {
+      return errorResponse({ code: "unauthorized", message: "missing or invalid service token" });
+    }
+    const body = await parseCappedBody(request, agentStatusSchema, AGENT_STATUS_BODY_MAX_BYTES, "AGENT_STATUS_BODY_MAX_BYTES");
+    if (!body.ok) return body.response;
+    const res = await ctx.runMutation(internal.agentInfra.upsertAgentStatus, body.data);
+    return json(200, res);
+  }),
+});
+
+// --- PUT /agent/memory — bulk mirror sync of the host memory store ----------
+// NOT a model tool. Upserts each entry by entry_id; full:true removes local rows
+// the payload omits (this table mirrors host state, not the append-only ledger).
+http.route({
+  path: "/agent/memory",
+  method: "PUT",
+  handler: httpAction(async (ctx, request) => {
+    if (!(await verifyServiceToken(request.headers.get("Authorization")))) {
+      return errorResponse({ code: "unauthorized", message: "missing or invalid service token" });
+    }
+    const body = await parseBody(request, memorySyncSchema);
+    if (!body.ok) return body.response;
+    const res = await ctx.runMutation(internal.agentInfra.syncMemories, { entries: body.data.entries, full: body.data.full });
+    return json(200, res);
   }),
 });
 

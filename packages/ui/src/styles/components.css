@@ -757,6 +757,60 @@
 }
 
 /* ====================================================================== */
+/* Switch — accessible on/off toggle (role="switch")                      */
+/* ====================================================================== */
+
+/* A track + thumb pill. State rides on [aria-checked], never colour alone: the
+   thumb slides and the accessible state flips together. Keyboard/focus come free
+   from the native <button>; the ring is the shared accent. */
+.hc-switch {
+  flex: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 40px;
+  height: 24px;
+  padding: 2px;
+  border: var(--hc-border-width) solid var(--hc-border);
+  border-radius: var(--hc-radius-full);
+  background-color: var(--hc-surface-sunken);
+  cursor: pointer;
+  transition:
+    background-color var(--hc-duration-2) var(--hc-ease-out),
+    border-color var(--hc-duration-2) var(--hc-ease-out);
+}
+.hc-switch__thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--hc-radius-full);
+  background-color: var(--hc-surface);
+  box-shadow: var(--hc-shadow-sm);
+  transition: transform var(--hc-duration-2) var(--hc-ease-out);
+}
+.hc-switch[aria-checked="true"] {
+  background-color: var(--hc-accent);
+  border-color: var(--hc-accent);
+}
+.hc-switch[aria-checked="true"] .hc-switch__thumb {
+  transform: translateX(16px);
+  background-color: var(--hc-text-inverted);
+}
+.hc-switch:focus-visible {
+  outline: var(--hc-focus-ring-width) solid var(--hc-focus-ring-color);
+  outline-offset: var(--hc-focus-ring-offset);
+}
+.hc-switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hc-switch,
+  .hc-switch__thumb {
+    transition: none;
+  }
+}
+
+/* ====================================================================== */
 /* Utilities                                                              */
 /* ====================================================================== */
 

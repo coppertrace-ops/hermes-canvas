@@ -1,13 +1,22 @@
 import { LIMITS } from "./limits";
+import {
+  AGENT_STATUS_BODY_MAX_BYTES,
+  MEMORY_ENTRY_CONTENT_MAX_BYTES,
+  MEMORY_SYNC_MAX_ENTRIES,
+} from "./status";
 
 /**
  * Hermes tool manifest — the single source for the agent's tool config and for
- * `docs/agent-api.md` (plan §2.3). One tool per `/agent/*` endpoint.
+ * `docs/agent-api.md` (plan §2.3). One tool per model-facing `/agent/*` endpoint.
  *
  * The JSON-schema shapes here are authored by hand but draw every numeric cap
  * and enum from the contract constants (`LIMITS`, the zod enums), so the manifest
  * cannot describe a different limit than the server enforces. (A zod→JSON-Schema
  * codegen pass is a later, non-correctness optimisation.)
+ *
+ * Plugin-infrastructure endpoints (the gateway's own status/memory reporting) are
+ * NOT tools — the model never calls them — so they live in `INFRA_ENDPOINTS`
+ * below and render into the doc's Infrastructure section, not the Tools section.
  */
 
 export interface ToolDef {
@@ -225,6 +234,79 @@ export const TOOL_MANIFEST: ToolDef[] = [
   },
 ];
 
+/**
+ * Plugin-infrastructure endpoints on the service-token `/agent/*` surface that are
+ * NOT model-facing tools: the external Hermes gateway reports its own runtime
+ * state and mirrors the host memory store; the owner's Settings panel reads them
+ * back via Convex queries. Documented for the plugin author, never surfaced to the
+ * model — so they are excluded from `TOOL_MANIFEST` and rendered separately.
+ */
+export const INFRA_ENDPOINTS: ToolDef[] = [
+  {
+    name: "agent_report_status",
+    method: "PUT",
+    path: "/agent/status",
+    description: `Report the gateway's runtime state (model, provider, effort, context usage, toolsets, sessions, …). Upserts a singleton; the server stamps reported_at. Body <= ${AGENT_STATUS_BODY_MAX_BYTES} bytes.`,
+    input_schema: {
+      type: "object",
+      required: ["model", "provider"],
+      properties: {
+        model: { type: "string" },
+        provider: { type: "string" },
+        effort: { type: "string" },
+        fallbacks: { type: "array", items: { type: "string" } },
+        context: {
+          type: "object",
+          properties: {
+            used_tokens: { type: "integer", minimum: 0 },
+            max_tokens: { type: "integer", minimum: 0 },
+          },
+        },
+        gateway: {
+          type: "object",
+          properties: { version: { type: "string" }, uptime_s: { type: "number", minimum: 0 } },
+        },
+        toolsets: { type: "array", items: { type: "string" } },
+        platforms: { type: "array", items: { type: "string" } },
+        sessions_active: { type: "integer", minimum: 0 },
+        memory: {
+          type: "object",
+          properties: { provider: { type: "string" }, recall_budget: { type: "number", minimum: 0 } },
+        },
+      },
+    },
+  },
+  {
+    name: "agent_sync_memory",
+    method: "PUT",
+    path: "/agent/memory",
+    description: `Bulk-mirror the host memory store. Upserts each entry by entry_id; with full:true, local rows absent from the payload are removed (this table mirrors host state, it is not the append-only ledger). <= ${MEMORY_SYNC_MAX_ENTRIES} entries/request; content <= ${MEMORY_ENTRY_CONTENT_MAX_BYTES} bytes each.`,
+    input_schema: {
+      type: "object",
+      required: ["entries"],
+      properties: {
+        entries: {
+          type: "array",
+          maxItems: MEMORY_SYNC_MAX_ENTRIES,
+          items: {
+            type: "object",
+            required: ["entry_id", "content"],
+            properties: {
+              entry_id: { type: "string" },
+              content: { type: "string" },
+              tags: { type: "array", items: { type: "string" } },
+              source: { type: "string" },
+              created_at: { type: "integer", minimum: 0 },
+              updated_at: { type: "integer", minimum: 0 },
+            },
+          },
+        },
+        full: { type: "boolean" },
+      },
+    },
+  },
+];
+
 /** The behavioural addendum delivered with the manifest (plan §2.3). */
 export const SYSTEM_PROMPT_ADDENDUM = [
   "You write to the Canvas through these tools only. Three rules the evidence demands:",
@@ -255,6 +337,22 @@ export function renderAgentApiMarkdown(): string {
   lines.push("## Tools");
   lines.push("");
   for (const t of TOOL_MANIFEST) {
+    lines.push(`### \`${t.name}\` — \`${t.method} ${t.path}\``);
+    lines.push("");
+    lines.push(t.description);
+    lines.push("");
+    lines.push("```json");
+    lines.push(JSON.stringify(t.input_schema, null, 2));
+    lines.push("```");
+    lines.push("");
+  }
+  lines.push("## Infrastructure endpoints");
+  lines.push("");
+  lines.push(
+    "> Service-token endpoints the Hermes gateway calls to report its own state. These are NOT model tools — the model never invokes them — and are consumed only by the owner's Settings panel.",
+  );
+  lines.push("");
+  for (const t of INFRA_ENDPOINTS) {
     lines.push(`### \`${t.name}\` — \`${t.method} ${t.path}\``);
     lines.push("");
     lines.push(t.description);

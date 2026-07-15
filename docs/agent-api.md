@@ -434,3 +434,145 @@ Read a user-shared file — the same bytes the human sees. Served with nosniff +
 }
 ```
 
+## Infrastructure endpoints
+
+> Service-token endpoints the Hermes gateway calls to report its own state. These are NOT model tools — the model never invokes them — and are consumed only by the owner's Settings panel.
+
+### `agent_report_status` — `PUT /agent/status`
+
+Report the gateway's runtime state (model, provider, effort, context usage, toolsets, sessions, …). Upserts a singleton; the server stamps reported_at. Body <= 16384 bytes.
+
+```json
+{
+  "type": "object",
+  "required": [
+    "model",
+    "provider"
+  ],
+  "properties": {
+    "model": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "effort": {
+      "type": "string"
+    },
+    "fallbacks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "used_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "uptime_s": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "toolsets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "platforms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sessions_active": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "memory": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "recall_budget": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
+```
+
+### `agent_sync_memory` — `PUT /agent/memory`
+
+Bulk-mirror the host memory store. Upserts each entry by entry_id; with full:true, local rows absent from the payload are removed (this table mirrors host state, it is not the append-only ledger). <= 500 entries/request; content <= 8192 bytes each.
+
+```json
+{
+  "type": "object",
+  "required": [
+    "entries"
+  ],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "content"
+        ],
+        "properties": {
+          "entry_id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "full": {
+      "type": "boolean"
+    }
+  }
+}
+```
+

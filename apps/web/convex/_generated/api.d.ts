@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as agentInfra from "../agentInfra.js";
 import type * as agentWrites from "../agentWrites.js";
 import type * as auth from "../auth.js";
 import type * as authGuard from "../authGuard.js";
@@ -23,6 +24,7 @@ import type * as lib_agentAuth from "../lib/agentAuth.js";
 import type * as lib_outcome from "../lib/outcome.js";
 import type * as lib_store from "../lib/store.js";
 import type * as metrics from "../metrics.js";
+import type * as settings from "../settings.js";
 
 import type {
   ApiFromModules,
@@ -31,6 +33,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agentInfra: typeof agentInfra;
   agentWrites: typeof agentWrites;
   auth: typeof auth;
   authGuard: typeof authGuard;
@@ -46,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   "lib/outcome": typeof lib_outcome;
   "lib/store": typeof lib_store;
   metrics: typeof metrics;
+  settings: typeof settings;
 }>;
 
 /**

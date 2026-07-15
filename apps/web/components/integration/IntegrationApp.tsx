@@ -40,10 +40,11 @@ import { createConvexChatBackend } from "./convexChatBackend";
 import { buildDemoChatItems } from "./demoSeed";
 import { ReadershipPanel } from "../metrics";
 import { JobsPanel } from "../jobs";
+import { SettingsPanel } from "../settings";
 import { useFlags } from "../flags";
 import { bannerFor, resolveWorkspaceMode, type BannerCopy } from "./workspaceMode";
 
-type View = "canvas" | "history" | "jobs";
+type View = "canvas" | "history" | "jobs" | "settings";
 
 /**
  * The Convex HTTP-action origin (`*.convex.site`), where `/attachments/:id` is
@@ -72,10 +73,12 @@ function ViewSwitch({
   view,
   onChange,
   showJobs,
+  showSettings,
 }: {
   view: View;
   onChange: (v: View) => void;
   showJobs: boolean;
+  showSettings: boolean;
 }) {
   return (
     <div className="hc-viewswitch" role="group" aria-label="Right pane view">
@@ -103,6 +106,16 @@ function ViewSwitch({
           onClick={() => onChange("jobs")}
         >
           Jobs
+        </button>
+      )}
+      {showSettings && (
+        <button
+          type="button"
+          className="hc-viewswitch__btn"
+          aria-pressed={view === "settings"}
+          onClick={() => onChange("settings")}
+        >
+          Settings
         </button>
       )}
     </div>
@@ -143,6 +156,7 @@ function WorkspaceView({
   readership,
   onEditBoard,
   jobs,
+  settings,
 }: {
   banner: BannerCopy;
   statusLabel: string;
@@ -158,6 +172,8 @@ function WorkspaceView({
   onEditBoard?: EditBoardFn;
   /** Live Jobs tab (P6). Shown as a third view only when `jobs_tab` is on. */
   jobs?: ReactNode;
+  /** Live Settings tab (Wave 2). Shown as a top-nav view only in the live workspace. */
+  settings?: ReactNode;
 }) {
   const [view, setView] = useState<View>("canvas");
   // Flag-gated sandbox previews for HTML diffs (WP5): defined only when
@@ -165,15 +181,24 @@ function WorkspaceView({
   const renderHtmlPreview = useHtmlPreviewRenderer();
   const { jobs_tab } = useFlags();
   const showJobs = jobs_tab && jobs !== undefined;
-  // If the jobs flag flips off while the jobs view is active, fall back to canvas.
-  const effectiveView: View = view === "jobs" && !showJobs ? "canvas" : view;
+  // Settings is a live-only admin view (needs Convex); it is not flag-gated.
+  const showSettings = settings !== undefined;
+  // If the view's owning surface disappears (jobs flag flips off, or a demo
+  // workspace with no settings), fall back to canvas rather than a blank pane.
+  const effectiveView: View =
+    (view === "jobs" && !showJobs) || (view === "settings" && !showSettings) ? "canvas" : view;
 
   const header = useMemo(
     () => (
       <div className="hc-header">
         <Brand />
         <div className="hc-header__spacer" />
-        <ViewSwitch view={effectiveView} onChange={setView} showJobs={showJobs} />
+        <ViewSwitch
+          view={effectiveView}
+          onChange={setView}
+          showJobs={showJobs}
+          showSettings={showSettings}
+        />
         <div className="hc-header__spacer" />
         <div className="hc-header__controls">
           <span
@@ -189,11 +214,13 @@ function WorkspaceView({
         </div>
       </div>
     ),
-    [effectiveView, statusLabel, statusTone, showJobs],
+    [effectiveView, statusLabel, statusTone, showJobs, showSettings],
   );
 
   const rightPane =
-    effectiveView === "jobs" ? (
+    effectiveView === "settings" ? (
+      <div className="hc-history-region">{settings}</div>
+    ) : effectiveView === "jobs" ? (
       <div className="hc-history-region">{jobs}</div>
     ) : effectiveView === "canvas" ? (
       <div className="hc-pane-fill">
@@ -304,6 +331,7 @@ function LiveWorkspace() {
       readership={<ReadershipPanel />}
       onEditBoard={onEditBoard}
       jobs={<JobsPanel />}
+      settings={<SettingsPanel />}
     />
   );
 }
