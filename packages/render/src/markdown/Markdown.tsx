@@ -1,9 +1,10 @@
 import { Fragment } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type {
   BlockNode,
   InlineNode,
   MarkdownPolicy,
+  TableAlign,
 } from "./types";
 import { DEFAULT_MARKDOWN_POLICY } from "./types";
 import { parseMarkdown } from "./sanitize";
@@ -78,7 +79,42 @@ function BlockView({ node }: { node: BlockNode }): ReactNode {
       );
     case "thematicBreak":
       return <hr className="hc-md__hr" />;
+    case "table":
+      // Wrapped so a wide table scrolls within the pane rather than forcing the
+      // whole prose column to overflow. Alignment rides as an inline text-align
+      // (a layout hint, not a colour) so no per-alignment CSS class is needed.
+      return (
+        <div className="hc-md__table-wrap">
+          <table className="hc-md__table">
+            <thead>
+              <tr>
+                {node.header.map((cell, c) => (
+                  <th key={c} className="hc-md__th" scope="col" style={alignStyle(node.align[c])}>
+                    {renderInline(cell)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {node.rows.map((row, r) => (
+                <tr key={r}>
+                  {row.map((cell, c) => (
+                    <td key={c} className="hc-md__td" style={alignStyle(node.align[c])}>
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
   }
+}
+
+/** Map a column alignment to an inline style (omitted for the default). */
+function alignStyle(align: TableAlign | undefined): CSSProperties | undefined {
+  return align ? { textAlign: align } : undefined;
 }
 
 function renderInline(nodes: InlineNode[]): ReactNode {

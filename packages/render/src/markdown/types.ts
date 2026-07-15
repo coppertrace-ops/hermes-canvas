@@ -84,13 +84,27 @@ export interface ThematicBreakNode {
   type: "thematicBreak";
 }
 
+/** Per-column horizontal alignment from the GFM delimiter row; null = default. */
+export type TableAlign = "left" | "center" | "right" | null;
+
+export interface TableNode {
+  type: "table";
+  /** One entry per column (length === header cell count). */
+  align: TableAlign[];
+  /** Header row cells, each a parsed inline sequence. */
+  header: InlineNode[][];
+  /** Body rows, each padded/truncated to the column count. */
+  rows: InlineNode[][][];
+}
+
 export type BlockNode =
   | HeadingNode
   | ParagraphNode
   | CodeBlockNode
   | ListNode
   | BlockquoteNode
-  | ThematicBreakNode;
+  | ThematicBreakNode
+  | TableNode;
 
 /**
  * Sanitizer configuration. Defaults are the strict plan §4 posture; WARDEN owns

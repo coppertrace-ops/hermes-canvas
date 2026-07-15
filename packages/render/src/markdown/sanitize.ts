@@ -4,6 +4,7 @@ import type {
   LinkNode,
   ImageNode,
   MarkdownPolicy,
+  TableAlign,
 } from "./types";
 import { DEFAULT_MARKDOWN_POLICY } from "./types";
 
@@ -19,8 +20,10 @@ import { DEFAULT_MARKDOWN_POLICY } from "./types";
  * images are flagged blocked rather than loaded.
  *
  * Scope is an intentional Markdown subset (headings, paragraphs, lists,
- * blockquotes, fenced code, thematic breaks; inline code, emphasis, links,
- * images). Anything unrecognised degrades to text — never to markup.
+ * blockquotes, fenced code, thematic breaks, GFM tables; inline code, emphasis,
+ * links, images). Anything unrecognised degrades to text — never to markup: a
+ * malformed table (e.g. a header with no valid `|---|` delimiter row) is left to
+ * flow through as ordinary paragraph text rather than throwing.
  */
 
 /** Extract a lowercase URL scheme (`javascript`, `https`, …) or null if none. */
@@ -185,6 +188,60 @@ const UL_RE = /^\s*[-*+]\s+(.*)$/;
 const OL_RE = /^\s*\d+[.)]\s+(.*)$/;
 const QUOTE_RE = /^\s*>\s?(.*)$/;
 
+// --- GFM tables --------------------------------------------------------------
+
+/** A delimiter cell: dashes with optional leading/trailing alignment colons. */
+const DELIM_CELL_RE = /^:?-+:?$/;
+
+/**
+ * Split one table row into trimmed cell strings on unescaped `|`. A `\|` is an
+ * escaped literal pipe (the parser's only escape), carried into the cell as `|`.
+ * A single leading/trailing pipe is optional GFM syntax and dropped — the empty
+ * edge cell it produces is discarded, while genuinely-empty interior cells stay.
+ */
+function splitTableRow(line: string): string[] {
+  const cells: string[] = [];
+  let cur = "";
+  const s = line.trim();
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!;
+    if (ch === "\\" && s[i + 1] === "|") {
+      cur += "|";
+      i++;
+      continue;
+    }
+    if (ch === "|") {
+      cells.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  cells.push(cur);
+  if (cells.length > 1 && cells[0]!.trim() === "") cells.shift();
+  if (cells.length > 1 && cells[cells.length - 1]!.trim() === "") cells.pop();
+  return cells.map((c) => c.trim());
+}
+
+/**
+ * Parse a delimiter row into per-column alignments, or null if the line is not a
+ * valid GFM delimiter row (every cell must be `:?-+:?`). `:--` → left, `--:` →
+ * right, `:--:` → center, `---` → default.
+ */
+function parseDelimiterRow(line: string): TableAlign[] | null {
+  if (!line.includes("-")) return null;
+  const cells = splitTableRow(line);
+  if (cells.length === 0) return null;
+  const aligns: TableAlign[] = [];
+  for (const cell of cells) {
+    if (!DELIM_CELL_RE.test(cell)) return null;
+    const left = cell.startsWith(":");
+    const right = cell.endsWith(":");
+    aligns.push(left && right ? "center" : right ? "right" : left ? "left" : null);
+  }
+  return aligns;
+}
+
 /** Parse a Markdown document into a safe block AST. */
 export function parseMarkdown(
   input: string,
@@ -266,6 +323,32 @@ export function parseMarkdown(
       }
       blocks.push({ type: "list", ordered, items });
       continue;
+    }
+
+    // GFM table: a pipe-bearing header row immediately followed by a delimiter
+    // row whose column count matches. Anything short of that (no delimiter, a
+    // cell-count mismatch) is NOT a table and falls through to paragraph text.
+    if (line.includes("|") && i + 1 < lines.length) {
+      const aligns = parseDelimiterRow(lines[i + 1]!);
+      const header = aligns ? splitTableRow(line) : null;
+      if (aligns && header && header.length === aligns.length) {
+        flushParagraph(para);
+        const cols = aligns.length;
+        const headerCells = header.map((c) => parseInline(c, policy));
+        i += 2;
+        const rows: InlineNode[][][] = [];
+        // Body runs until a blank line or a line with no pipe. Short rows are
+        // padded and overlong rows truncated to the header's column count (GFM).
+        while (i < lines.length && lines[i]!.trim() !== "" && lines[i]!.includes("|")) {
+          const raw = splitTableRow(lines[i]!);
+          const cells: InlineNode[][] = [];
+          for (let c = 0; c < cols; c++) cells.push(parseInline(raw[c] ?? "", policy));
+          rows.push(cells);
+          i++;
+        }
+        blocks.push({ type: "table", align: aligns, header: headerCells, rows });
+        continue;
+      }
     }
 
     para.push(line);

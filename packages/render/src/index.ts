@@ -31,6 +31,8 @@ export type {
   ListNode,
   BlockquoteNode,
   ThematicBreakNode,
+  TableNode,
+  TableAlign,
   TextNode,
   EmphasisNode,
   CodeSpanNode,

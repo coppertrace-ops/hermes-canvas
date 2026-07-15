@@ -186,20 +186,26 @@ h6.hc-md__heading {
   word-break: break-all;
 }
 
-/* Tables aren't emitted by the current parser, but style them defensively so a
-   future GFM policy inherits the system rather than browser defaults. */
-.hc-md table {
+/* GFM tables — the parser emits a <div.hc-md__table-wrap> scroll container so a
+   wide table scrolls in place instead of blowing out the prose column; the table
+   itself uses hairline collapsed cell borders on the 8-pt grid. Per-column
+   alignment rides as an inline text-align from the delimiter row. */
+.hc-md__table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.hc-md__table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--hc-font-size-sm);
 }
-.hc-md th,
-.hc-md td {
+.hc-md__th,
+.hc-md__td {
   padding: var(--hc-space-2) var(--hc-space-3);
   border: var(--hc-border-width) solid var(--hc-border);
   text-align: start;
 }
-.hc-md th {
+.hc-md__th {
   background-color: var(--hc-surface-sunken);
   font-weight: var(--hc-weight-semibold);
 }
@@ -513,6 +519,116 @@ h6.hc-md__heading {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 24ch;
+}
+
+/* Active-item region: `display: contents` so each slot flows directly in the
+   rail's flex row while the wrapper still carries the `tablist` role. */
+.hc-canvas__rail-tabs {
+  display: contents;
+}
+
+/* Wraps a selectable rail item together with its hover/focus-revealed archive
+   control (the × lives beside the button, never nested inside it). */
+.hc-canvas__rail-slot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+/* Reserve inline-end room on an archivable item so the revealed × overlays the
+   pill's edge without covering the title. */
+.hc-canvas__rail-item--archivable {
+  padding-inline-end: calc(var(--hc-space-3) + 20px);
+}
+
+/* Removal is archive-only: the × stays out of sight until the item is hovered or
+   focused within — the same calm-by-default, one-focus-away reveal the tab bar
+   uses for its per-tab controls. */
+.hc-canvas__rail-controls {
+  position: absolute;
+  inset-inline-end: var(--hc-space-1);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--hc-duration-2) var(--hc-ease-standard);
+}
+.hc-canvas__rail-slot:hover .hc-canvas__rail-controls,
+.hc-canvas__rail-slot:focus-within .hc-canvas__rail-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Inline archive confirm — a compact chip that swaps in for the item, echoing
+   the RestoreConfirm language (an honest, reversible confirmation rather than a
+   native confirm()). */
+.hc-canvas__rail-item--confirming {
+  gap: var(--hc-space-2);
+  cursor: default;
+  background-color: var(--hc-surface-hover);
+  border-color: var(--hc-border);
+  color: var(--hc-text);
+}
+
+/* Archived-item chip in the "show archived" recovery list — visually recessed,
+   with its restore control always present. */
+.hc-canvas__rail-item--archived {
+  cursor: default;
+  color: var(--hc-text-tertiary);
+  background-color: var(--hc-surface-2);
+  border-style: dashed;
+  border-color: var(--hc-border);
+}
+
+/* Transient "Archived — Undo" affordance shown right after an archive. */
+.hc-canvas__rail-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hc-space-2);
+  flex: none;
+  height: 28px;
+  padding-inline: var(--hc-space-3);
+  border-radius: var(--hc-radius-full);
+  background-color: var(--hc-accent-subtle);
+  color: var(--hc-text-secondary);
+  font-size: var(--hc-font-size-sm);
+  white-space: nowrap;
+}
+.hc-canvas__rail-undo-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 24ch;
+}
+
+/* "Show archived (n)" toggle at the rail's end. */
+.hc-canvas__rail-toggle {
+  flex: none;
+  height: 28px;
+  padding-inline: var(--hc-space-3);
+  border: var(--hc-border-width) solid transparent;
+  border-radius: var(--hc-radius-full);
+  background: transparent;
+  color: var(--hc-text-tertiary);
+  font-family: inherit;
+  font-size: var(--hc-font-size-sm);
+  font-weight: var(--hc-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--hc-duration-1) var(--hc-ease-standard),
+    color var(--hc-duration-1) var(--hc-ease-standard);
+}
+.hc-canvas__rail-toggle:hover {
+  background-color: var(--hc-surface-hover);
+  color: var(--hc-text);
+}
+.hc-canvas__rail-toggle:focus-visible {
+  outline: var(--hc-focus-ring-width) solid var(--hc-focus-ring-color);
+  outline-offset: var(--hc-focus-ring-offset);
 }
 
 /* ====================================================================== */
