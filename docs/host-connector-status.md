@@ -52,6 +52,24 @@ starts only inside the long-lived gateway process (never per-turn workers):
   Entry ids are stable content hashes; content is passed through
   `agent.redact.redact_sensitive_text` before leaving the host.
 
+### Live tool-call receipts (2026-07-15)
+
+The `pre_tool_call` / `post_tool_call` hooks are **live** (previously muted).
+Each tool invocation posts `PUT /agent/tool-calls/{tool_call_id}` — a `running`
+receipt at start, then a terminal `ok|error|blocked` update to the same id at
+completion — feeding the live tool-call timeline. Args/results are redacted with
+`agent.redact.redact_sensitive_text` on the host (the hook layer is upstream of
+the display redactor) then truncated UTF-8-safely to the endpoint caps
+(args_summary ≤500 B, result_tail ≤2048 B, error_message ≤2048 B). Posting is
+fire-and-forget via a single background worker with a dedicated 5 s-timeout
+client, so a slow Canvas never adds tool latency; a full queue or a 429 (the
+endpoint's separate 120/min bucket) drops the receipt silently (429 logs at most
+once/min, never retried). Set `HERMES_CANVAS_TOOLRECEIPT_DEBUG=1` to log each
+post's id/status/http (no payloads); `HERMES_CANVAS_TOOLRECEIPT_SKIP=a,b` skips
+named chatty tools (empty by default — none warranted). Verified end-to-end via
+a live `canvas_list_artifacts` turn: one `tool_call_id` posted `running`→`ok`,
+both HTTP 200.
+
 Config:
 
 ```yaml

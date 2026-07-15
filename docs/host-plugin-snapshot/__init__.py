@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import queue
 import threading
 import time
 import uuid
@@ -390,29 +391,279 @@ def post_llm_call(**kwargs) -> None:
         logger.warning("canvas post assistant failed: %s", e)
 
 
+# ---------------------------------------------------------------------------
+# Tool-call receipts → live tool-call feed (PUT /agent/tool-calls/{id}).
+#
+# pre_tool_call posts a "running" receipt; post_tool_call updates the same id in
+# place with a terminal status + timing + a redacted result tail. Posting is
+# fire-and-forget through a single background worker with a short-timeout client
+# so a slow Canvas NEVER adds latency to tool execution.
+#
+# CRITICAL: args/result arrive here UNREDACTED — this hook layer is upstream of
+# the display-path redactor. Every arg/result/error preview is passed through
+# agent.redact.redact_sensitive_text before it leaves the host, then truncated
+# UTF-8-safely to the endpoint's byte caps.
+# ---------------------------------------------------------------------------
+
+_TOOLCALL_QUEUE: "Optional[queue.Queue]" = None
+_TOOLCALL_WORKER_STARTED = False
+_TOOLCALL_CLIENT: Any = None
+_TOOLCALL_RL_LOGGED_MS = 0  # last 429 log stamp (one warn/min max)
+
+_TOOLCALL_QUEUE_MAX = int(os.environ.get("HERMES_CANVAS_TOOLRECEIPT_QUEUE", "2000"))
+_TOOLCALL_TIMEOUT_S = float(os.environ.get("HERMES_CANVAS_TOOLRECEIPT_TIMEOUT_S", "5"))
+# Operator lever: log id+status (never payloads) on each successful post so a
+# receipt can be traced end-to-end. Off by default — receipts are high-volume.
+_TOOLCALL_DEBUG = os.environ.get("HERMES_CANVAS_TOOLRECEIPT_DEBUG", "").lower() in {"1", "true", "yes"}
+_TOOLCALL_ARGS_MAX_BYTES = 500
+_TOOLCALL_TAIL_MAX_BYTES = 2048
+_TOOLCALL_ERR_MAX_BYTES = 2048
+_TOOLCALL_TOOL_MAX_BYTES = 256
+_TOOLCALL_ID_MAX = 256
+
+# Skip-list for ultra-chatty internal tools (comma-separated names). Empty by
+# default: inspection of the gateway tool loop found no tool that fires
+# dozens/min today (the canvas poller that used to is retired). Set
+# HERMES_CANVAS_TOOLRECEIPT_SKIP to add names without a code change.
+_TOOLCALL_SKIP = {
+    s.strip()
+    for s in os.environ.get("HERMES_CANVAS_TOOLRECEIPT_SKIP", "").split(",")
+    if s.strip()
+}
+
+# post-hook status vocabulary (ok|error|blocked|cancelled|timeout) → the
+# endpoint's terminal set (ok|error|blocked). cancelled/timeout are failures.
+_TERMINAL_STATUS_MAP = {
+    "ok": "ok",
+    "error": "error",
+    "blocked": "blocked",
+    "cancelled": "error",
+    "timeout": "error",
+}
+
+_ID_SAFE = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:-"
+)
+
+_PRIMARY_ARG_KEYS = (
+    "command", "cmd", "file_path", "path", "query", "url", "pattern",
+    "prompt", "text", "content", "artifact_id", "id", "name", "key",
+)
+
+
+def _utf8_truncate(s: str, max_bytes: int) -> str:
+    """Clip to at most max_bytes of UTF-8 without splitting a codepoint."""
+    if not s:
+        return ""
+    b = s.encode("utf-8")
+    if len(b) <= max_bytes:
+        return s
+    return b[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _redact_display(text: str) -> str:
+    """Mask secrets before an arg/result preview leaves the host. The tool hook
+    layer bypasses the display redactor, so we apply it here. Safe on any
+    string; non-secret text passes through unchanged."""
+    if not text:
+        return ""
+    try:
+        from agent.redact import redact_sensitive_text
+        return redact_sensitive_text(text, force=True, file_read=True)
+    except Exception:
+        return text
+
+
+def _preview_value(v: Any) -> str:
+    if isinstance(v, str):
+        s = v
+    elif v is None or isinstance(v, (int, float, bool)):
+        s = json.dumps(v)
+    else:
+        try:
+            s = json.dumps(v, default=str, ensure_ascii=False)
+        except Exception:
+            s = str(v)
+    s = s.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    if len(s) > 140:
+        s = s[:139] + "…"
+    return s
+
+
+def _summarize_args(args: Any) -> str:
+    """Compact, single-line, repr-ish preview of a tool's args — primary arg
+    first when identifiable. Redacted, then truncated to <=500 UTF-8 bytes."""
+    try:
+        if isinstance(args, dict) and args:
+            ordered = [k for k in _PRIMARY_ARG_KEYS if k in args]
+            ordered += [k for k in args if k not in ordered]
+            preview = ", ".join(f"{k}={_preview_value(args[k])}" for k in ordered)
+        elif args:
+            preview = _preview_value(args)
+        else:
+            preview = ""
+    except Exception:
+        preview = ""
+    return _utf8_truncate(_redact_display(preview), _TOOLCALL_ARGS_MAX_BYTES)
+
+
+def _result_tail(result: Any) -> str:
+    """Last ~2KB of the result, redacted then truncated UTF-8-safely."""
+    if result is None:
+        return ""
+    s = result if isinstance(result, str) else json.dumps(result, default=str, ensure_ascii=False)
+    if not s:
+        return ""
+    # Redact a bounded tail (wider than the cap, for regex context), then clip.
+    return _utf8_truncate(_redact_display(s[-8000:]), _TOOLCALL_TAIL_MAX_BYTES)
+
+
+def _sanitize_tool_call_id(raw: Any) -> str:
+    """Coerce to the endpoint id charset [A-Za-z0-9._:-] (<=256). Synthesize a
+    fallback id when the runtime hands us nothing usable so the receipt still
+    lands rather than being dropped."""
+    cleaned = "".join(c for c in str(raw or "") if c in _ID_SAFE)[:_TOOLCALL_ID_MAX]
+    return cleaned or f"tc-{uuid.uuid4().hex}"
+
+
+def _get_toolcall_client() -> Any:
+    """Dedicated short-timeout client for receipts so a stalled Canvas can never
+    hold the worker for the shared client's 30s."""
+    global _TOOLCALL_CLIENT
+    if _TOOLCALL_CLIENT is not None:
+        return _TOOLCALL_CLIENT
+    try:
+        from .client import CanvasClient
+        _TOOLCALL_CLIENT = CanvasClient(timeout_s=_TOOLCALL_TIMEOUT_S)
+    except Exception as e:
+        logger.debug("canvas tool-receipt client unavailable: %s", e)
+        return None
+    return _TOOLCALL_CLIENT
+
+
+def _log_rate_limited() -> None:
+    global _TOOLCALL_RL_LOGGED_MS
+    now = _now_ms()
+    if now - _TOOLCALL_RL_LOGGED_MS >= 60000:
+        _TOOLCALL_RL_LOGGED_MS = now
+        logger.warning("canvas tool receipts rate-limited (429); dropping until quota resets")
+
+
+def _toolcall_worker_loop() -> None:
+    logger.info("canvas tool-receipt worker starting pid=%s", os.getpid())
+    while True:
+        try:
+            item = _TOOLCALL_QUEUE.get()
+        except Exception:
+            continue
+        if not item:
+            continue
+        tool_call_id, payload = item
+        client = _get_toolcall_client()
+        if client is None:
+            continue
+        try:
+            client.report_tool_call(tool_call_id, payload)
+            if _TOOLCALL_DEBUG:
+                logger.info(
+                    "canvas tool receipt ok id=%s status=%s http=200",
+                    tool_call_id,
+                    payload.get("status"),
+                )
+        except CanvasError as e:
+            if e.status == 429:
+                _log_rate_limited()
+            else:
+                logger.debug("canvas tool receipt failed id=%s: %s", tool_call_id, e)
+        except Exception as e:
+            logger.debug("canvas tool receipt error id=%s: %s", tool_call_id, e)
+
+
+def _ensure_toolcall_worker() -> None:
+    global _TOOLCALL_QUEUE, _TOOLCALL_WORKER_STARTED
+    if _TOOLCALL_WORKER_STARTED:
+        return
+    with _STATE_LOCK:
+        if _TOOLCALL_WORKER_STARTED:
+            return
+        _TOOLCALL_QUEUE = queue.Queue(maxsize=_TOOLCALL_QUEUE_MAX)
+        t = threading.Thread(
+            target=_toolcall_worker_loop, name="hermes-canvas-toolreceipts", daemon=True
+        )
+        t.start()
+        _TOOLCALL_WORKER_STARTED = True
+
+
+def _enqueue_receipt(tool_call_id: str, payload: dict) -> None:
+    """Hand a receipt to the worker. Never blocks: a full queue drops the
+    receipt so tool execution latency can never regress."""
+    _ensure_toolcall_worker()
+    try:
+        _TOOLCALL_QUEUE.put_nowait((tool_call_id, payload))
+    except queue.Full:
+        pass
+
+
 def pre_tool_call(**kwargs) -> None:
-    return  # muted
-    # original muted below
-    name = kwargs.get("tool_name") or "tool"
-    args = kwargs.get("args") or {}
-    _safe_post_text(f"🔧 tool start · `{name}`\n```json\n{_clip(args, 1500)}\n```")
+    """Observer: emit a 'running' receipt for the live tool-call feed. Posting is
+    off-thread and never raises, so tool execution is never delayed or broken."""
+    try:
+        tool = str(kwargs.get("tool_name") or "tool")
+        if tool in _TOOLCALL_SKIP:
+            return
+        payload: dict[str, Any] = {
+            "tool": _utf8_truncate(tool, _TOOLCALL_TOOL_MAX_BYTES),
+            "status": "running",
+            "args_summary": _summarize_args(kwargs.get("args")),
+            "started_at": _now_ms(),
+        }
+        sid = kwargs.get("session_id")
+        if sid:
+            payload["session_id"] = str(sid)
+        tid = kwargs.get("turn_id")
+        if tid:
+            payload["turn_id"] = str(tid)
+        _enqueue_receipt(_sanitize_tool_call_id(kwargs.get("tool_call_id")), payload)
+    except Exception as e:
+        logger.debug("canvas pre_tool_call receipt error: %s", e)
 
 
 def post_tool_call(**kwargs) -> None:
-    return  # muted
-    # original muted below
-    name = kwargs.get("tool_name") or "tool"
-    status = kwargs.get("status") or "ok"
-    duration = kwargs.get("duration_ms")
-    err = kwargs.get("error_message")
-    result = kwargs.get("result")
-    dur = f" · {duration}ms" if duration is not None else ""
-    if status != "ok":
-        _safe_post_text(
-            f"❌ tool {status} · `{name}`{dur}\n{err or ''}\n```\n{_clip(result, 1200)}\n```"
-        )
-    else:
-        _safe_post_text(f"✅ tool ok · `{name}`{dur}\n```\n{_clip(result, 1200)}\n```")
+    """Observer: update the same tool_call_id in place with the terminal status
+    (ok|error|blocked), timing, a redacted result tail, and any error message.
+    args_summary is resent so a completed-only row is self-sufficient if the
+    'running' PUT never landed. Off-thread; never raises."""
+    try:
+        tool = str(kwargs.get("tool_name") or "tool")
+        if tool in _TOOLCALL_SKIP:
+            return
+        finished = _now_ms()
+        raw_status = str(kwargs.get("status") or "ok").lower()
+        payload: dict[str, Any] = {
+            "tool": _utf8_truncate(tool, _TOOLCALL_TOOL_MAX_BYTES),
+            "status": _TERMINAL_STATUS_MAP.get(raw_status, "error"),
+            "args_summary": _summarize_args(kwargs.get("args")),
+            "result_tail": _result_tail(kwargs.get("result")),
+            "finished_at": finished,
+        }
+        dur = kwargs.get("duration_ms")
+        if isinstance(dur, (int, float)) and dur >= 0:
+            payload["duration_ms"] = int(dur)
+            payload["started_at"] = finished - int(dur)  # keep finished_at >= started_at
+        err = kwargs.get("error_message")
+        if err:
+            payload["error_message"] = _utf8_truncate(
+                _redact_display(str(err)), _TOOLCALL_ERR_MAX_BYTES
+            )
+        sid = kwargs.get("session_id")
+        if sid:
+            payload["session_id"] = str(sid)
+        tid = kwargs.get("turn_id")
+        if tid:
+            payload["turn_id"] = str(tid)
+        _enqueue_receipt(_sanitize_tool_call_id(kwargs.get("tool_call_id")), payload)
+    except Exception as e:
+        logger.debug("canvas post_tool_call receipt error: %s", e)
 
 
 def subagent_start(**kwargs) -> None:

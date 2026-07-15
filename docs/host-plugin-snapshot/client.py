@@ -149,6 +149,15 @@ class CanvasClient:
         """PUT a bulk mirror of the host memory store. full:true replaces."""
         return self._request("PUT", "/agent/memory", body=payload)
 
+    def report_tool_call(self, tool_call_id: str, payload: dict) -> dict:
+        """PUT a live tool-call receipt (upsert by id: same id start→completion
+        updates in place). id charset [A-Za-z0-9._:-]; keep those chars literal."""
+        return self._request(
+            "PUT",
+            f"/agent/tool-calls/{urllib.parse.quote(tool_call_id, safe=':._-')}",
+            body=payload,
+        )
+
 
 _client: Optional[CanvasClient] = None
 
