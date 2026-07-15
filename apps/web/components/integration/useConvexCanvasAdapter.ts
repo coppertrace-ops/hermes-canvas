@@ -18,6 +18,7 @@ import type {
   CanvasTabView,
 } from "@hermes/render";
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
 /** Synthetic tab id used when Convex has artifacts but zero tabs. */
 export const WORKSPACE_TAB_ID = "__workspace__";
@@ -32,9 +33,14 @@ export interface ConvexCanvasAdapter {
 
 export function useConvexCanvasAdapter(): ConvexCanvasAdapter {
   const tabs = useQuery(api.canvas.listTabs, {});
-  const artifacts = useQuery(api.canvas.listArtifacts, {});
+  // Include archived so the rail's "show archived" recovery list has data; active
+  // views filter on `status` below, so this widening is inert for them.
+  const artifacts = useQuery(api.canvas.listArtifacts, { include_archived: true });
   const changes = useQuery(api.lastSeen.listArtifactChanges, {});
   const markSeenMut = useMutation(api.lastSeen.markSeen);
+  const archiveArtifactMut = useMutation(api.canvas.archiveArtifactAsHuman);
+  const unarchiveArtifactMut = useMutation(api.canvas.unarchiveArtifactAsHuman);
+  const archiveTabMut = useMutation(api.canvas.archiveTabAsHuman);
 
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
@@ -135,6 +141,30 @@ export function useConvexCanvasAdapter(): ConvexCanvasAdapter {
     [markSeenMut],
   );
 
+  // Removal is soft-archive (reversible, recorded) — never a hard delete.
+  const archiveArtifact = useCallback(
+    (artifactId: string) => {
+      void archiveArtifactMut({ id: artifactId });
+    },
+    [archiveArtifactMut],
+  );
+
+  const unarchiveArtifact = useCallback(
+    (artifactId: string) => {
+      void unarchiveArtifactMut({ id: artifactId });
+    },
+    [unarchiveArtifactMut],
+  );
+
+  const archiveTab = useCallback(
+    (tabId: string) => {
+      // The synthetic Workspace tab isn't a real row; there's nothing to archive.
+      if (tabId === WORKSPACE_TAB_ID) return;
+      void archiveTabMut({ tab_id: tabId as Id<"tabs"> });
+    },
+    [archiveTabMut],
+  );
+
   const getArtifactContent = useCallback(
     (artifactId: string): ArtifactContentState => {
       if (artifactId !== activeArtifactId) return { status: "loading" };
@@ -174,18 +204,38 @@ export function useConvexCanvasAdapter(): ConvexCanvasAdapter {
         if (realTabCount <= 1) return [...own, ...orphans.filter((o) => !own.some((x) => x.id === o.id))];
         return own.length > 0 ? own : orphans;
       },
+      archivedArtifactsByTab: (tabId: string) => {
+        const arch = artifactViews.filter((a) => a.status === "archived");
+        // Mirror artifactsByTab's orphan handling so archived orphans surface under Workspace.
+        if (tabId === WORKSPACE_TAB_ID) {
+          return arch.filter((a) => !a.tabId || a.tabId === WORKSPACE_TAB_ID);
+        }
+        return arch.filter((a) => a.tabId === tabId);
+      },
       getArtifactContent,
       markSeen,
       actions: {
         createTab: () => {},
         renameTab: () => {},
         reorderTab: () => {},
-        archiveTab: () => {},
+        archiveTab,
         selectTab,
         selectArtifact,
+        archiveArtifact,
+        unarchiveArtifact,
       },
     }),
-    [tabViews, artifactViews, getArtifactContent, markSeen, selectTab, selectArtifact],
+    [
+      tabViews,
+      artifactViews,
+      getArtifactContent,
+      markSeen,
+      selectTab,
+      selectArtifact,
+      archiveTab,
+      archiveArtifact,
+      unarchiveArtifact,
+    ],
   );
 
   return {
@@ -193,6 +243,7 @@ export function useConvexCanvasAdapter(): ConvexCanvasAdapter {
     activeTabId,
     activeArtifactId,
     loaded: artifacts !== undefined,
-    artifactCount: artifacts?.length ?? 0,
+    // Active-artifact count only — an archived-only deployment must not read as "live".
+    artifactCount: (artifacts ?? []).filter((a) => a.status === "active").length,
   };
 }

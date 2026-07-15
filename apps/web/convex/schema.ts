@@ -31,6 +31,10 @@ const resolvedAction = v.object({
     v.literal("region"),
     v.literal("restore"),
     v.literal("archive"),
+    // Reversal of a soft-archive. No version row ever carries this op (unarchive
+    // writes none), but the shared `ResolvedAction` type includes it, so the
+    // validator must accept it to stay assignable.
+    v.literal("unarchive"),
   ),
   target: v.optional(v.string()),
   region: v.optional(v.string()),

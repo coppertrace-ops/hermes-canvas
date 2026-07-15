@@ -16,6 +16,10 @@ export const resolvedOpSchema = z.enum([
   "region",
   "restore",
   "archive",
+  // Reversal of a soft-archive: the artifact goes active again. Additive to the
+  // frozen op set; like `archive` it appends no content version, so it never
+  // reaches the version-diff header (which falls back to "unknown" for it).
+  "unarchive",
 ]);
 export type ResolvedOp = z.infer<typeof resolvedOpSchema>;
 

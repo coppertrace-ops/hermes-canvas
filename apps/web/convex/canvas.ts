@@ -8,13 +8,22 @@ import type {
   FeedMessage,
   UpdatesResponse,
 } from "@hermes/contract";
-import { CanvasError, parseBoardContent, planRestoreArtifact, planUpdateArtifact } from "@hermes/contract";
+import {
+  CanvasError,
+  parseBoardContent,
+  planArchiveArtifact,
+  planRestoreArtifact,
+  planUnarchiveArtifact,
+  planUpdateArtifact,
+} from "@hermes/contract";
+import type { ArtifactRecord } from "@hermes/contract";
 import { v } from "convex/values";
 import { requireOwner } from "./authGuard";
 import type { Doc } from "./_generated/dataModel";
 import { internalQuery, mutation, query, type QueryCtx } from "./_generated/server";
 import { reject, type WriteOutcome } from "./lib/outcome";
 import {
+  appendEvent,
   applyPlan,
   getArtifactByKey,
   getVersion,
@@ -51,6 +60,20 @@ function summaryOf(doc: Doc<"artifacts">): ArtifactSummary {
     title: doc.title,
     status: doc.status,
     head_seq: doc.head_seq,
+  };
+}
+
+/** Project a stored artifact row into the contract `ArtifactRecord` the `plan*` functions consume. */
+function recordOf(doc: Doc<"artifacts">): ArtifactRecord {
+  return {
+    id: doc.art_key,
+    tab_id: doc.tab_id,
+    type: doc.type,
+    title: doc.title,
+    status: doc.status,
+    created_by: doc.created_by,
+    head_seq: doc.head_seq,
+    created_at: doc.created_at,
   };
 }
 
@@ -391,6 +414,79 @@ export const restoreArtifact = mutation({
     }
     await applyPlan(ctx, plan);
     return { ok: true, result: plan.result };
+  },
+});
+
+/**
+ * Human archive from the canvas (plan §2.2: removal is SOFT-ARCHIVE only —
+ * reversible, recorded, never a hard delete). Routes through the SAME
+ * `planArchiveArtifact` the agent path uses (`agentWrites.archiveArtifact`), so
+ * the status flip + `artifact_archived` event land in one transaction with the
+ * server-recorded `resolved_action` — the ledger can never disagree with the
+ * data. Browser-only, so it requires the signed-in owner. Re-archiving an already
+ * archived artifact is a visible rejection, not a duplicate ledger line.
+ */
+export const archiveArtifactAsHuman = mutation({
+  args: { id: v.string(), why: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<WriteOutcome> => {
+    await requireOwner(ctx);
+    const now = Date.now();
+    const author: Author = "human";
+    const doc = await getArtifactByKey(ctx, args.id);
+    if (!doc) return reject(ctx, CanvasError.notFound(`artifact ${args.id}`), author, { artifact_id: args.id }, now);
+    if (doc.status === "archived") {
+      return reject(ctx, CanvasError.validation(`artifact ${args.id} is already archived`), author, { artifact_id: args.id }, now);
+    }
+    const plan = planArchiveArtifact({ artifact: recordOf(doc), why: args.why ?? "archived from canvas", author, now });
+    await applyPlan(ctx, plan);
+    return { ok: true, result: plan.result };
+  },
+});
+
+/**
+ * Human unarchive — the reversal that makes archive safe (plan §2.2 "reversible").
+ * Mirror of the archive path via `planUnarchiveArtifact`: it flips the status back
+ * to `active` and appends one `artifact_updated` event (the kind union is frozen;
+ * the true effect is carried by `resolved_action.op: "unarchive"`). No content
+ * version is written, so the artifact returns with the exact version chain it had.
+ * Browser-only ⇒ owner-guarded. Unarchiving an active artifact is a visible
+ * rejection.
+ */
+export const unarchiveArtifactAsHuman = mutation({
+  args: { id: v.string(), why: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<WriteOutcome> => {
+    await requireOwner(ctx);
+    const now = Date.now();
+    const author: Author = "human";
+    const doc = await getArtifactByKey(ctx, args.id);
+    if (!doc) return reject(ctx, CanvasError.notFound(`artifact ${args.id}`), author, { artifact_id: args.id }, now);
+    if (doc.status !== "archived") {
+      return reject(ctx, CanvasError.validation(`artifact ${args.id} is not archived`), author, { artifact_id: args.id }, now);
+    }
+    const plan = planUnarchiveArtifact({ artifact: recordOf(doc), why: args.why ?? "restored from canvas", author, now });
+    await applyPlan(ctx, plan);
+    return { ok: true, result: plan.result };
+  },
+});
+
+/**
+ * Human tab archive from the canvas tab bar. Reuses the agent tab-archive shape
+ * (`agentWrites.patchTab` with `status: "archived"`): status flip + one
+ * `tab_changed` event in the same mutation. The only difference is the event
+ * actor is `human`, so the audit line attributes the removal correctly. Removal is
+ * archive-only — there is no tab delete. Browser-only ⇒ owner-guarded.
+ */
+export const archiveTabAsHuman = mutation({
+  args: { tab_id: v.id("tabs") },
+  handler: async (ctx, args): Promise<WriteOutcome | { ok: true }> => {
+    await requireOwner(ctx);
+    const now = Date.now();
+    const tab = await ctx.db.get(args.tab_id);
+    if (!tab) return reject(ctx, CanvasError.notFound(`tab ${args.tab_id}`), "human", { tab_id: args.tab_id }, now);
+    if (tab.status === "archived") return { ok: true };
+    await ctx.db.patch(args.tab_id, { status: "archived" });
+    await appendEvent(ctx, { kind: "tab_changed", actor: "human", refs: { tab_id: args.tab_id }, at: now });
+    return { ok: true };
   },
 });
 

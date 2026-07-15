@@ -75,7 +75,13 @@ export interface CanvasActions {
   selectArtifact(artifactId: string): void;
   /** Optional: create/archive artifacts if the surface exposes it. */
   createArtifact?(tabId: string, type: ArtifactType, title: string): void;
+  /**
+   * Soft-archive an artifact (reversible, plan §2.2 — never a hard delete). The
+   * canvas rail exposes this as a per-item control when the adapter supplies it.
+   */
   archiveArtifact?(artifactId: string): void;
+  /** Reverse a soft-archive — the artifact returns to `active` with its history intact. */
+  unarchiveArtifact?(artifactId: string): void;
 }
 
 /**
@@ -87,6 +93,12 @@ export interface CanvasDataAdapter {
   tabs: CanvasTabView[];
   /** Artifacts belonging to a tab, in display order. */
   artifactsByTab(tabId: string): CanvasArtifactView[];
+  /**
+   * Archived artifacts belonging to a tab — the recovery surface for the rail's
+   * "show archived" list. Optional: a surface that never archives can omit it and
+   * the rail hides the toggle entirely.
+   */
+  archivedArtifactsByTab?(tabId: string): CanvasArtifactView[];
   /** Live content state for one artifact (optionally a historical `seq`). */
   getArtifactContent(artifactId: string, seq?: number): ArtifactContentState;
   actions: CanvasActions;

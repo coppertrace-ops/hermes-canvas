@@ -96,3 +96,13 @@ export function PlusIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/** Counter-clockwise restore arrow — the "bring it back" affordance for an archived item. */
+export function RotateCcwIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3 8a9 9 0 1 1-1.5 5" />
+      <path d="M3 3v5h5" />
+    </svg>
+  );
+}

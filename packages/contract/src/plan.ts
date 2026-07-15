@@ -311,3 +311,40 @@ export function planArchiveArtifact(i: ArchiveInputs): WritePlan {
     },
   };
 }
+
+/**
+ * Reverse a soft-archive (plan §2.2: removal is archive-only AND reversible).
+ * The mirror image of {@link planArchiveArtifact}: it flips the status back to
+ * `active` and appends ONE ledger event — no content version, since the head is
+ * untouched. Content history is never mutated, so the exact version chain the
+ * artifact had at archive time is what it comes back with.
+ *
+ * The event `kind` reuses `artifact_updated` rather than a new
+ * `artifact_unarchived` kind: the kind union is frozen (a chat consumer
+ * `never`-checks it — see `rejectionEvent`'s note), so widening it additively is
+ * not free. The true effect is carried honestly by `resolved_action.op:
+ * "unarchive"` on the returned result.
+ */
+export function planUnarchiveArtifact(i: ArchiveInputs): WritePlan {
+  const resolved_action: ResolvedAction = { op: "unarchive", target: i.artifact.id };
+  const events: PlannedEvent[] = [
+    {
+      kind: "artifact_updated",
+      actor: actorOf(i.author),
+      refs: { artifact_id: i.artifact.id, version_seq: i.artifact.head_seq },
+      at: i.now,
+    },
+  ];
+  return {
+    statusChange: "active",
+    events,
+    result: {
+      artifact_id: i.artifact.id,
+      head_seq: i.artifact.head_seq,
+      seq: i.artifact.head_seq,
+      contended: false,
+      render_state: "ok",
+      resolved_action,
+    },
+  };
+}

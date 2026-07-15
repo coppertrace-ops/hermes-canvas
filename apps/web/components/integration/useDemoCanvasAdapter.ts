@@ -56,6 +56,25 @@ export function useDemoCanvasAdapter(): DemoCanvasAdapter {
     });
   }, []);
 
+  // Soft-archive is reversible — flip status in local state; the shell handles
+  // moving focus off an archived artifact via selectArtifact.
+  const setStatus = useCallback((artifactId: string, status: "active" | "archived") => {
+    setArtifacts((prev) => {
+      let touched = false;
+      const next = prev.map((a) => {
+        if (a.id === artifactId && a.status !== status) {
+          touched = true;
+          return { ...a, status };
+        }
+        return a;
+      });
+      return touched ? next : prev;
+    });
+  }, []);
+
+  const archiveArtifact = useCallback((id: string) => setStatus(id, "archived"), [setStatus]);
+  const unarchiveArtifact = useCallback((id: string) => setStatus(id, "active"), [setStatus]);
+
   const adapter = useMemo<CanvasDataAdapter>(() => {
     const changedByTab = (tabId: string) =>
       artifacts.filter((a) => a.tabId === tabId && a.status === "active" && a.changed).length;
@@ -66,6 +85,8 @@ export function useDemoCanvasAdapter(): DemoCanvasAdapter {
         .map((t) => ({ ...t, changedCount: changedByTab(t.id) })),
       artifactsByTab: (tabId: string) =>
         artifacts.filter((a) => a.tabId === tabId && a.status === "active"),
+      archivedArtifactsByTab: (tabId: string) =>
+        artifacts.filter((a) => a.tabId === tabId && a.status === "archived"),
       getArtifactContent: (artifactId: string): ArtifactContentState => {
         const a = artifacts.find((x) => x.id === artifactId);
         if (!a) return { status: "empty" };
@@ -93,9 +114,11 @@ export function useDemoCanvasAdapter(): DemoCanvasAdapter {
         archiveTab: () => {},
         selectTab,
         selectArtifact,
+        archiveArtifact,
+        unarchiveArtifact,
       },
     };
-  }, [tabs, artifacts, markSeen, selectTab, selectArtifact]);
+  }, [tabs, artifacts, markSeen, selectTab, selectArtifact, archiveArtifact, unarchiveArtifact]);
 
   return { adapter, activeTabId, activeArtifactId };
 }

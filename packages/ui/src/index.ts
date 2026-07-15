@@ -63,4 +63,5 @@ export {
   PencilIcon,
   CloseIcon,
   PlusIcon,
+  RotateCcwIcon,
 } from "./components/icons";

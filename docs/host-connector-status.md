@@ -13,7 +13,7 @@ This chat session
       HERMES_CANVAS_BASE_URL
       HERMES_SERVICE_TOKEN
   → Convex HTTP surface
-      https://qualified-alligator-800.convex.site/agent/*
+      https://adjoining-swan-820.convex.site/agent/*
 ```
 
 MacBook Neo was only the original setup terminal. It is **not** the Hermes runtime.
@@ -44,7 +44,7 @@ platform_toolsets:
 Env on hermes-box (`~/.hermes/.env`):
 
 ```text
-HERMES_CANVAS_BASE_URL=https://qualified-alligator-800.convex.site
+HERMES_CANVAS_BASE_URL=https://adjoining-swan-820.convex.site
 HERMES_SERVICE_TOKEN=<raw 256-bit token>
 ```
 
