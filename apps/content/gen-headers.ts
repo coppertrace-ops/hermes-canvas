@@ -25,7 +25,7 @@ import { APP_ORIGIN } from "./appOrigin";
 export function buildVercelConfig(appOrigin: string) {
   return {
     $schema: "https://openapi.vercel.sh/vercel.json",
-    framework: "nextjs",
+    framework: null,
     installCommand: "cd ../.. && corepack enable && corepack pnpm install",
     buildCommand: "cd ../.. && corepack enable && corepack pnpm --filter @hermes/content build",
     outputDirectory: "out",
