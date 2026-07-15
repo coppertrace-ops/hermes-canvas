@@ -80,9 +80,43 @@ export interface SystemEvent {
   summary: string;
 }
 
-/** One item in the merged chat timeline: a message or a system event. */
+/** Terminal + in-flight states of a tool call, mirroring the contract enum. */
+export type ToolCallStatus = "running" | "ok" | "error" | "blocked";
+
+/**
+ * A live tool-call receipt row in the chat feed. The external agent posts a
+ * `running` receipt at start and a terminal one at completion; both share `id`
+ * (the host's `tool_call_id`), so the row edits in place rather than stacking —
+ * the "Telegram tool status" behaviour. Derived from the contract `ToolCallDto`;
+ * kept as a distinct view model (camelCase, a single `at` sort key) so the row
+ * component stays purely presentational.
+ */
+export interface ToolCall {
+  /** The stable tool_call_id joining the start + completion receipts. */
+  id: string;
+  tool: string;
+  status: ToolCallStatus;
+  argsSummary?: string;
+  resultTail?: string;
+  errorMessage?: string;
+  /** Originating session; a subagent tool carries its own distinct id. */
+  sessionId?: string;
+  /** The turn this call belongs to (used to cluster a burst of receipts). */
+  turnId?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  durationMs?: number;
+  /** Sort key on the timeline: when the call started, or last updated if unknown. */
+  at: number;
+  /** Server-stamped last-write time; the row re-renders when this advances. */
+  updatedAt: number;
+}
+
+/** One item in the merged chat timeline: a message, a system event, or a tool call. */
 export type ChatItem =
-  { kind: "message"; message: ChatMessage } | { kind: "system"; event: SystemEvent };
+  | { kind: "message"; message: ChatMessage }
+  | { kind: "system"; event: SystemEvent }
+  | { kind: "tool"; toolCall: ToolCall };
 
 /**
  * Live-connection state driving the reconnect banner. The Phase-2 gate (G2)

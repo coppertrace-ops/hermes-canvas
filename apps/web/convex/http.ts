@@ -12,6 +12,8 @@ import {
   patchTabSchema,
   postMessageSchema,
   runReportSchema,
+  toolCallIdSchema,
+  toolCallUpsertSchema,
   updateArtifactSchema,
   updatesQuerySchema,
 } from "@hermes/contract";
@@ -362,6 +364,43 @@ http.route({
       log_tail: body.data.log_tail,
     });
     return outcomeIshResponse(res);
+  }),
+});
+
+// --- PUT /agent/tool-calls/:tool_call_id — live tool-call receipts ----------
+// NOT a model tool: the Hermes gateway reports tool-call telemetry here and the
+// owner's chat timeline renders it as live-updating rows. Upserts by
+// tool_call_id (start posts `running`; completion patches in place; a
+// completed-only post creates the finished row). Caps + a dedicated rate limit
+// are enforced inside the mutation (no HTTP-layer bypass).
+const TOOL_CALL_PREFIX = "/agent/tool-calls/";
+http.route({
+  pathPrefix: TOOL_CALL_PREFIX,
+  method: "PUT",
+  handler: httpAction(async (ctx, request) => {
+    if (!(await verifyServiceToken(request.headers.get("Authorization")))) {
+      return errorResponse({ code: "unauthorized", message: "missing or invalid service token" });
+    }
+    const rawId = new URL(request.url).pathname.slice(TOOL_CALL_PREFIX.length);
+    const parsedId = toolCallIdSchema.safeParse(decodeURIComponent(rawId));
+    if (!parsedId.success) return errorResponse({ code: "not_found", message: "valid tool_call_id required" });
+    const body = await parseBody(request, toolCallUpsertSchema);
+    if (!body.ok) return body.response;
+    const d = body.data;
+    const res = await ctx.runMutation(internal.agentToolCalls.upsertToolCall, {
+      tool_call_id: parsedId.data,
+      tool: d.tool,
+      status: d.status,
+      args_summary: d.args_summary,
+      result_tail: d.result_tail,
+      error_message: d.error_message,
+      session_id: d.session_id,
+      turn_id: d.turn_id,
+      started_at: d.started_at,
+      finished_at: d.finished_at,
+      duration_ms: d.duration_ms,
+    });
+    return res.ok ? json(200, res) : errorResponse(res.error);
   }),
 });
 

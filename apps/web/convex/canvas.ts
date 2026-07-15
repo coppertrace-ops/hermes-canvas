@@ -211,6 +211,59 @@ export const listRecentEvents = query({
   },
 });
 
+/** Wire shape of one tool-call receipt for the owner chat timeline. */
+export interface ToolCallDto {
+  tool_call_id: string;
+  tool: string;
+  status: "running" | "ok" | "error" | "blocked";
+  args_summary?: string;
+  result_tail?: string;
+  error_message?: string;
+  session_id?: string;
+  turn_id?: string;
+  started_at?: number;
+  finished_at?: number;
+  duration_ms?: number;
+  updated_at: number;
+}
+
+function toToolCallDto(d: Doc<"tool_calls">): ToolCallDto {
+  return {
+    tool_call_id: d.tool_call_id,
+    tool: d.tool,
+    status: d.status,
+    args_summary: d.args_summary,
+    result_tail: d.result_tail,
+    error_message: d.error_message,
+    session_id: d.session_id,
+    turn_id: d.turn_id,
+    started_at: d.started_at,
+    finished_at: d.finished_at,
+    duration_ms: d.duration_ms,
+    updated_at: d.updated_at,
+  };
+}
+
+/**
+ * Owner-guarded live slice of the most recent tool-call receipts, oldest→newest
+ * (mirrors `listRecentEvents`). The chat timeline interleaves these as
+ * live-updating rows next to messages + system lines. A NEW query rather than a
+ * fold into `listRecentEvents`: receipts live in their own `tool_calls` table
+ * (updated in place, keyed by tool_call_id), whereas events are append-only rows
+ * keyed by a global seq — different lifecycle, different table. The writes arrive
+ * on the identity-less `/agent/*` path, so — like `settings.listMemories` — this
+ * reader is `requireOwner`-gated and the agent path never reaches it.
+ */
+export const listRecentToolCalls = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<ToolCallDto[]> => {
+    await requireOwner(ctx);
+    const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
+    const rows = await ctx.db.query("tool_calls").withIndex("by_updated_at").order("desc").take(limit);
+    return rows.reverse().map(toToolCallDto);
+  },
+});
+
 /**
  * Agent inbox: unacked human messages + events after cursor.
  *

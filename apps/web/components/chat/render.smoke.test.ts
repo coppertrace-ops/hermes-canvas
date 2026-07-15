@@ -5,7 +5,17 @@ import { AttachmentPreview } from "./AttachmentPreview";
 import { MessageBubble } from "./MessageBubble";
 import { MockChatPane } from "./ChatPane";
 import { SystemEventRow } from "./SystemEventRow";
-import type { AttachmentView, ChatMessage, SystemEvent } from "./types";
+import { ToolCallCluster, ToolCallRow } from "./ToolCallRow";
+import type { AttachmentView, ChatMessage, SystemEvent, ToolCall } from "./types";
+
+const tc = (over: Partial<ToolCall> = {}): ToolCall => ({
+  id: "tc1",
+  tool: "canvas_update_artifact",
+  status: "ok",
+  at: 1,
+  updatedAt: 1,
+  ...over,
+});
 
 /**
  * Runtime render smoke tests: prove the real component tree renders without
@@ -71,6 +81,46 @@ describe("chat render smoke", () => {
     expect(renderToStaticMarkup(h(SystemEventRow, { event }))).toContain(
       "Hermes updated artifact art_1 → v3",
     );
+  });
+
+  it("renders a running tool-call row with the tool name and a spinner", () => {
+    const html = renderToStaticMarkup(
+      h(ToolCallRow, { toolCall: tc({ status: "running", argsSummary: "art_1 region" }) }),
+    );
+    expect(html).toContain("canvas_update_artifact");
+    expect(html).toContain("art_1 region");
+    expect(html).toContain("hc-spinner"); // running state
+    expect(html).toContain('data-status="running"');
+  });
+
+  it("renders a completed tool-call row with a duration", () => {
+    const html = renderToStaticMarkup(h(ToolCallRow, { toolCall: tc({ status: "ok", durationMs: 1400 }) }));
+    expect(html).toContain("1.4s");
+    expect(html).toContain('data-status="ok"');
+  });
+
+  it("renders a failed tool-call row and its expandable error detail affordance", () => {
+    const html = renderToStaticMarkup(
+      h(ToolCallRow, { toolCall: tc({ status: "error", errorMessage: "boom: exit 1" }) }),
+    );
+    expect(html).toContain('data-status="error"');
+    // The row is a button (keyboard-expandable) when there is detail to show.
+    expect(html).toContain("aria-expanded");
+  });
+
+  it("shows a subagent chip when the session differs from the window majority", () => {
+    const html = renderToStaticMarkup(
+      h(ToolCallRow, { toolCall: tc({ sessionId: "sub" }), majoritySessionId: "main" }),
+    );
+    expect(html).toContain("subagent");
+  });
+
+  it("renders a collapsed tool-call cluster as 'N tool calls'", () => {
+    const html = renderToStaticMarkup(
+      h(ToolCallCluster, { tools: [tc({ id: "a" }), tc({ id: "b", status: "error" }), tc({ id: "c" })] }),
+    );
+    expect(html).toContain("3 tool calls");
+    expect(html).toContain("1 failed");
   });
 
   it("renders an attachment with an upload progress bar", () => {

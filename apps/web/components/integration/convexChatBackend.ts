@@ -28,6 +28,7 @@
 import type { ApiError, FeedEvent, FeedMessage } from "@hermes/contract";
 import type { ConvexReactClient } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import type { ToolCallDto } from "../../convex/canvas";
 import type { AttachmentMeta } from "../../convex/files";
 import {
   buildTimeline,
@@ -45,6 +46,7 @@ import type {
   ConnectionState,
   SendDraft,
   SystemEvent,
+  ToolCall,
   UploadCallbacks,
   UploadFile,
   UploadHandle,
@@ -53,6 +55,8 @@ import type {
 const PAGE_SIZE = 40;
 /** Bounded slice of most-recent system-event lines to interleave into the feed. */
 const EVENTS_LIMIT = 50;
+/** Bounded slice of most-recent tool-call receipts to interleave as live rows. */
+const TOOL_CALLS_LIMIT = 50;
 
 /** Structural subset of Convex's connection state we map from. */
 interface ConvexConnState {
@@ -203,6 +207,12 @@ export interface AttachmentEndpoint {
  */
 export interface ConvexChatBackendOptions {
   systemEvents?: () => SystemEvent[];
+  /**
+   * Tool-call source override. By default the backend live-subscribes to
+   * `canvas.listRecentToolCalls` (owner-guarded, bounded slice) and maps the wire
+   * DTOs to {@link ToolCall} view models. A test may substitute a synchronous reader.
+   */
+  toolCalls?: () => ToolCall[];
   /** Enables authenticated attachment downloads; omit to hide the affordance. */
   attachmentEndpoint?: AttachmentEndpoint;
   /** Injectable byte uploader (tests). Defaults to {@link defaultPutBytes}. */
@@ -223,6 +233,33 @@ export interface ConvexChatBackendOptions {
 function toSystemLines(events: FeedEvent[] | null | undefined): SystemEvent[] {
   if (!Array.isArray(events)) return [];
   return events.filter((e) => isSystemLineKind(e.kind)).map(describeSystemEvent);
+}
+
+/** Map a tool-call wire DTO to the chat view model (snake -> camel; sort key). */
+function toToolCall(d: ToolCallDto): ToolCall {
+  return {
+    id: d.tool_call_id,
+    tool: d.tool,
+    status: d.status,
+    argsSummary: d.args_summary,
+    resultTail: d.result_tail,
+    errorMessage: d.error_message,
+    sessionId: d.session_id,
+    turnId: d.turn_id,
+    startedAt: d.started_at,
+    finishedAt: d.finished_at,
+    durationMs: d.duration_ms,
+    // Timeline sort key: when the call started, or last-updated if the reporter
+    // omitted started_at (a completed-only receipt).
+    at: d.started_at ?? d.updated_at,
+    updatedAt: d.updated_at,
+  };
+}
+
+/** Tolerate a not-yet-loaded live query (undefined before its first snapshot). */
+function toToolCalls(rows: ToolCallDto[] | null | undefined): ToolCall[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map(toToolCall);
 }
 
 function mergeById(older: FeedMessage[], recent: FeedMessage[]): FeedMessage[] {
@@ -251,6 +288,8 @@ export function createConvexChatBackend(
   let liveSystemEvents: SystemEvent[] = [];
   /** Override wins (tests / custom callers); otherwise the live event slice. */
   const systemEvents = options.systemEvents ?? (() => liveSystemEvents);
+  let liveToolCalls: ToolCall[] = [];
+  const toolCalls = options.toolCalls ?? (() => liveToolCalls);
   const endpoint = options.attachmentEndpoint;
   const putBytes = options.putBytes ?? defaultPutBytes;
   const readMeta =
@@ -332,7 +371,8 @@ export function createConvexChatBackend(
     }));
     // System lines come from the bounded, owner-guarded recent-events slice — never
     // the full event log (that was the "open at top of hundreds of rows" failure).
-    return buildTimeline([...serverMsgs, ...pending], systemEvents());
+    // Tool-call rows come from the parallel bounded slice and interleave by time.
+    return buildTimeline([...serverMsgs, ...pending], systemEvents(), toolCalls());
   }
 
   function snapshot(): ChatSnapshot {
@@ -378,6 +418,20 @@ export function createConvexChatBackend(
     };
     eventsWatch.onUpdate(applyEvents);
     applyEvents();
+  }
+
+  // Live tail of recent tool-call receipts (bounded + owner-guarded). Skipped when
+  // a caller supplies its own `toolCalls` reader (e.g. tests).
+  if (!options.toolCalls) {
+    const toolCallsWatch = client.watchQuery(api.canvas.listRecentToolCalls, { limit: TOOL_CALLS_LIMIT });
+    const applyToolCalls = () => {
+      const res = toolCallsWatch.localQueryResult();
+      if (!res) return;
+      liveToolCalls = toToolCalls(res);
+      emit();
+    };
+    toolCallsWatch.onUpdate(applyToolCalls);
+    applyToolCalls();
   }
 
   // Drive the reconnect banner from the live transport, not from query arrival.

@@ -4,6 +4,12 @@ import {
   MEMORY_ENTRY_CONTENT_MAX_BYTES,
   MEMORY_SYNC_MAX_ENTRIES,
 } from "./status";
+import {
+  TOOL_ARGS_SUMMARY_MAX_BYTES,
+  TOOL_CALL_UPSERTS_PER_MIN,
+  TOOL_ERROR_MESSAGE_MAX_BYTES,
+  TOOL_RESULT_TAIL_MAX_BYTES,
+} from "./toolCall";
 
 /**
  * Hermes tool manifest — the single source for the agent's tool config and for
@@ -302,6 +308,28 @@ export const INFRA_ENDPOINTS: ToolDef[] = [
           },
         },
         full: { type: "boolean" },
+      },
+    },
+  },
+  {
+    name: "agent_report_tool_call",
+    method: "PUT",
+    path: "/agent/tool-calls/:tool_call_id",
+    description: `Report a tool-call receipt for the owner's live chat timeline. Post {status:"running"} at start, then a terminal status (ok|error|blocked) at completion — the SAME tool_call_id updates the row in place; a single completed post creates the finished row directly. Subagent tools report with their own session_id. Receipts arrive pre-redacted + host-truncated, and the caps are re-enforced server-side (no bypass): args_summary <= ${TOOL_ARGS_SUMMARY_MAX_BYTES} bytes, result_tail <= ${TOOL_RESULT_TAIL_MAX_BYTES} bytes, error_message <= ${TOOL_ERROR_MESSAGE_MAX_BYTES} bytes. These receipts are chatty, so they have their own ${TOOL_CALL_UPSERTS_PER_MIN}/min upsert budget, separate from the artifact/message write ceiling.`,
+    input_schema: {
+      type: "object",
+      required: ["tool", "status"],
+      properties: {
+        tool: { type: "string" },
+        status: { type: "string", enum: ["running", "ok", "error", "blocked"] },
+        args_summary: { type: "string" },
+        result_tail: { type: "string" },
+        error_message: { type: "string" },
+        session_id: { type: "string" },
+        turn_id: { type: "string" },
+        started_at: { type: "integer", minimum: 0 },
+        finished_at: { type: "integer", minimum: 0 },
+        duration_ms: { type: "integer", minimum: 0 },
       },
     },
   },

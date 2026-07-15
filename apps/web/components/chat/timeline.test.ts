@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildTimeline } from "./timeline";
-import type { ChatMessage, SystemEvent } from "./types";
+import type { ChatMessage, SystemEvent, ToolCall } from "./types";
+
+const tool = (id: string, at: number): ToolCall => ({ id, tool: "t", status: "ok", at, updatedAt: at });
 
 const msg = (id: string, at: number): ChatMessage => ({
   id,
@@ -23,11 +25,9 @@ const evt = (id: string, at: number): SystemEvent => ({
 describe("buildTimeline", () => {
   it("interleaves messages and events in ascending time order", () => {
     const items = buildTimeline([msg("m1", 100), msg("m2", 300)], [evt("e1", 200)]);
-    expect(items.map((i) => (i.kind === "message" ? i.message.id : i.event.id))).toEqual([
-      "m1",
-      "e1",
-      "m2",
-    ]);
+    expect(
+      items.map((i) => (i.kind === "message" ? i.message.id : i.kind === "tool" ? i.toolCall.id : i.event.id)),
+    ).toEqual(["m1", "e1", "m2"]);
   });
 
   it("is deterministic regardless of input order (reconnect resync safety)", () => {
@@ -40,6 +40,22 @@ describe("buildTimeline", () => {
     const items = buildTimeline([msg("m1", 500)], [evt("e1", 500)]);
     expect(items[0]?.kind).toBe("system");
     expect(items[1]?.kind).toBe("message");
+  });
+
+  it("interleaves tool-call rows by time between messages and events", () => {
+    const items = buildTimeline(
+      [msg("m1", 100), msg("m2", 400)],
+      [evt("e1", 300)],
+      [tool("t1", 200)],
+    );
+    expect(
+      items.map((i) => (i.kind === "message" ? i.message.id : i.kind === "tool" ? i.toolCall.id : i.event.id)),
+    ).toEqual(["m1", "t1", "e1", "m2"]);
+  });
+
+  it("orders a same-instant system line before a tool row before a message", () => {
+    const items = buildTimeline([msg("m1", 500)], [evt("e1", 500)], [tool("t1", 500)]);
+    expect(items.map((i) => i.kind)).toEqual(["system", "tool", "message"]);
   });
 
   it("returns an empty array for empty inputs", () => {

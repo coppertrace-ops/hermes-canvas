@@ -576,3 +576,58 @@ Bulk-mirror the host memory store. Upserts each entry by entry_id; with full:tru
 }
 ```
 
+### `agent_report_tool_call` — `PUT /agent/tool-calls/:tool_call_id`
+
+Report a tool-call receipt for the owner's live chat timeline. Post {status:"running"} at start, then a terminal status (ok|error|blocked) at completion — the SAME tool_call_id updates the row in place; a single completed post creates the finished row directly. Subagent tools report with their own session_id. Receipts arrive pre-redacted + host-truncated, and the caps are re-enforced server-side (no bypass): args_summary <= 500 bytes, result_tail <= 2048 bytes, error_message <= 2048 bytes. These receipts are chatty, so they have their own 120/min upsert budget, separate from the artifact/message write ceiling.
+
+```json
+{
+  "type": "object",
+  "required": [
+    "tool",
+    "status"
+  ],
+  "properties": {
+    "tool": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "running",
+        "ok",
+        "error",
+        "blocked"
+      ]
+    },
+    "args_summary": {
+      "type": "string"
+    },
+    "result_tail": {
+      "type": "string"
+    },
+    "error_message": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "turn_id": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "finished_at": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
+```
+

@@ -253,6 +253,39 @@ export default defineSchema({
     synced_at: v.number(), // server-stamped ms
   }).index("by_entry_id", ["entry_id"]),
 
+  /**
+   * Tool-call receipts reported by the external Hermes gateway over the
+   * service-token `/agent/tool-calls/:id` path and rendered as live-updating rows
+   * in the owner's chat timeline. Keyed by the host's stable `tool_call_id`
+   * (unique): a start posts `running`, the completion patches the SAME row in
+   * place. This is infra reporting (like `agent_status`/`memories`), NOT the
+   * append-only ledger — no `events` row is written per receipt, and a row IS
+   * patched (the whole point). Additive-only (plan §9). `updated_at` is
+   * server-stamped and indexed so the owner query can take the most recent slice
+   * and the dedicated upsert limiter can count recent writes in the window.
+   */
+  tool_calls: defineTable({
+    tool_call_id: v.string(), // the host's stable id joining start -> finish
+    tool: v.string(),
+    status: v.union(
+      v.literal("running"),
+      v.literal("ok"),
+      v.literal("error"),
+      v.literal("blocked"),
+    ),
+    args_summary: v.optional(v.string()),
+    result_tail: v.optional(v.string()),
+    error_message: v.optional(v.string()),
+    session_id: v.optional(v.string()),
+    turn_id: v.optional(v.string()),
+    started_at: v.optional(v.number()),
+    finished_at: v.optional(v.number()),
+    duration_ms: v.optional(v.number()),
+    updated_at: v.number(), // server-stamped ms
+  })
+    .index("by_tool_call_id", ["tool_call_id"])
+    .index("by_updated_at", ["updated_at"]),
+
   // -------------------------------------------------------------------------
   // CHRONICLE (plan §3 changed-since-last-looked; §8 G4 readership test).
   // Additive-only tables (plan §9), owned by CHRONICLE and consumed only by

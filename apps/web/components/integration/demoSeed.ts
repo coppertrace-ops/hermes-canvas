@@ -192,6 +192,30 @@ export function buildDemoChatItems(now: number): ChatItem[] {
         summary: "Hermes updated Design notes → v12",
       },
     },
+    // A completed same-turn burst — collapses into a "3 tool calls" cluster so a
+    // busy turn doesn't drown the transcript.
+    demoTool("demo_tc1", "canvas_read_artifact", "ok", "sess_main", "turn_a", now - 1000 * 400, {
+      argsSummary: "art_1 (Design notes)",
+      resultTail: "# Design notes\n\nHermes Canvas is an authenticated workspace…",
+      durationMs: 240,
+    }),
+    demoTool("demo_tc2", "canvas_read_artifact", "ok", "sess_main", "turn_a", now - 1000 * 399, {
+      argsSummary: "art_2 (Auth flow)",
+      resultTail: "flowchart LR\n  H[Human] --> WEB[Next.js app]",
+      durationMs: 190,
+    }),
+    demoTool("demo_tc3", "canvas_update_artifact", "ok", "sess_main", "turn_a", now - 1000 * 398, {
+      argsSummary: 'art_1 region "Principles" why="tightened wording"',
+      resultTail: "head_seq: 12 (contended: false)",
+      durationMs: 512,
+    }),
+    // A subagent tool (its session differs from the window majority) — standalone
+    // row with a "subagent" chip.
+    demoTool("demo_tc4", "web_search", "ok", "sess_sub", "turn_sub", now - 1000 * 380, {
+      argsSummary: "convex live query best practices",
+      resultTail: "3 results • top: docs.convex.dev/functions/query-functions",
+      durationMs: 1340,
+    }),
     {
       kind: "message",
       message: {
@@ -203,5 +227,36 @@ export function buildDemoChatItems(now: number): ChatItem[] {
         at: now - 1000 * 60 * 6,
       },
     },
+    // A live, in-flight call — shows the running spinner + edit-in-place behaviour.
+    demoTool("demo_tc5", "bash", "running", "sess_main", "turn_b", now - 1000 * 4, {
+      argsSummary: "pnpm -r test",
+    }),
   ];
+}
+
+/** Build one demo tool-call chat item (view model mirrors the live adapter). */
+function demoTool(
+  id: string,
+  tool: string,
+  status: "running" | "ok" | "error" | "blocked",
+  sessionId: string,
+  turnId: string,
+  at: number,
+  extra: { argsSummary?: string; resultTail?: string; errorMessage?: string; durationMs?: number },
+): ChatItem {
+  return {
+    kind: "tool",
+    toolCall: {
+      id,
+      tool,
+      status,
+      sessionId,
+      turnId,
+      at,
+      updatedAt: at,
+      startedAt: at,
+      finishedAt: status === "running" ? undefined : at + (extra.durationMs ?? 0),
+      ...extra,
+    },
+  };
 }

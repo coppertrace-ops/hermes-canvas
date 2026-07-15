@@ -27,6 +27,8 @@ export { MessageBubble } from "./MessageBubble";
 export type { MessageBubbleProps } from "./MessageBubble";
 export { SystemEventRow } from "./SystemEventRow";
 export type { SystemEventRowProps } from "./SystemEventRow";
+export { ToolCallRow, ToolCallCluster } from "./ToolCallRow";
+export type { ToolCallRowProps, ToolCallClusterProps } from "./ToolCallRow";
 export { Composer } from "./Composer";
 export type { ComposerProps } from "./Composer";
 export { AttachmentPicker } from "./AttachmentPicker";
@@ -49,7 +51,16 @@ export type {
   ConnectionState,
   MessageStatus,
   SystemEvent,
+  ToolCall,
+  ToolCallStatus,
 } from "./types";
+export {
+  describeToolStatus,
+  formatToolDuration,
+  isSubagentCall,
+  majoritySession,
+} from "./toolCalls";
+export type { ToolStatusMeta } from "./toolCalls";
 export {
   MAX_ATTACHMENT_BYTES,
   attachmentStatusTone,
@@ -62,7 +73,7 @@ export type { FileLike, GuardResult } from "./attachments";
 export { describeSystemEvent, isSystemLineKind } from "./events";
 export { buildTimeline } from "./timeline";
 export { GROUP_WINDOW_MS, layoutTimeline } from "./grouping";
-export type { DayDividerRow, MessageRow, SystemRow, TimelineRow } from "./grouping";
+export type { DayDividerRow, MessageRow, SystemRow, TimelineRow, ToolRow, ToolClusterRow } from "./grouping";
 export {
   dayKey,
   formatDayDivider,

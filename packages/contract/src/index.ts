@@ -20,6 +20,7 @@ export * from "./flags";
 export * from "./resolvedAction";
 export * from "./job";
 export * from "./status";
+export * from "./toolCall";
 export * from "./tab";
 export * from "./api";
 export * from "./records";

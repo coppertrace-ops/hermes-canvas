@@ -17,7 +17,7 @@
 import type { FeedEvent } from "@hermes/contract";
 import type { ChatBackend, SendDraft, UploadCallbacks, UploadFile, UploadHandle } from "./backend";
 import { describeSystemEvent } from "./events";
-import type { AttachmentView, ChatItem, ChatMessage, ChatSnapshot, ConnectionState } from "./types";
+import type { AttachmentView, ChatItem, ChatMessage, ChatSnapshot, ConnectionState, ToolCall } from "./types";
 
 export interface MockBackendOptions {
   /** Auto-drive acks/replies/uploads on timers. Default true; tests pass false. */
@@ -46,6 +46,11 @@ export interface MockChatBackend extends ChatBackend {
   streamAgent(): { id: string; delta: (chunk: string) => void; done: () => void };
   /** Append a system-event row from a contract feed event. */
   pushEvent(event: FeedEvent): void;
+  /**
+   * Upsert a tool-call receipt by `id` (mirrors the live edit-in-place behaviour):
+   * the first call inserts a row, a later call with the same id updates it.
+   */
+  pushToolCall(toolCall: ToolCall): void;
   /** Advance an in-flight upload's progress in [0, 1]. */
   progressUpload(id: string, fraction: number): void;
   /** Resolve an in-flight upload: `uploading` → `ready`. */
@@ -235,6 +240,12 @@ export function createMockChatBackend(opts: MockBackendOptions = {}): MockChatBa
     items.push({ kind: "system", event: describeSystemEvent(event) });
     emit();
   }
+  function pushToolCall(toolCall: ToolCall) {
+    const idx = items.findIndex((i) => i.kind === "tool" && i.toolCall.id === toolCall.id);
+    if (idx >= 0) items[idx] = { kind: "tool", toolCall };
+    else items.push({ kind: "tool", toolCall });
+    emit();
+  }
   function progressUpload(id: string, fraction: number) {
     const cb = uploadCbs.get(id);
     cb?.onProgress?.(Math.max(0, Math.min(1, fraction)));
@@ -284,6 +295,7 @@ export function createMockChatBackend(opts: MockBackendOptions = {}): MockChatBa
     pushAgentMessage,
     streamAgent,
     pushEvent,
+    pushToolCall,
     progressUpload,
     resolveUpload,
     failUpload,
@@ -291,10 +303,14 @@ export function createMockChatBackend(opts: MockBackendOptions = {}): MockChatBa
 }
 
 function cloneItem(item: ChatItem): ChatItem {
-  return item.kind === "message"
-    ? {
-        kind: "message",
-        message: { ...item.message, attachments: item.message.attachments.map((a) => ({ ...a })) },
-      }
-    : { kind: "system", event: { ...item.event } };
+  if (item.kind === "message") {
+    return {
+      kind: "message",
+      message: { ...item.message, attachments: item.message.attachments.map((a) => ({ ...a })) },
+    };
+  }
+  if (item.kind === "tool") {
+    return { kind: "tool", toolCall: { ...item.toolCall } };
+  }
+  return { kind: "system", event: { ...item.event } };
 }

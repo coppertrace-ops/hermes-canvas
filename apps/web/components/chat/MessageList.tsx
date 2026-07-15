@@ -27,6 +27,8 @@ import { layoutTimeline } from "./grouping";
 import { MessageBubble } from "./MessageBubble";
 import { SystemEventRow } from "./SystemEventRow";
 import { formatDayDivider } from "./time";
+import { ToolCallCluster, ToolCallRow } from "./ToolCallRow";
+import { majoritySession } from "./toolCalls";
 import type { ChatItem, ConnectionState } from "./types";
 
 export interface MessageListProps {
@@ -47,7 +49,10 @@ export interface MessageListProps {
 const LOAD_OLDER_THRESHOLD = 72;
 
 /** Top margin per row type, giving groups tight intra-spacing and clear breaks. */
-function rowGap(kind: "day-divider" | "group-start" | "grouped" | "system", first: boolean): string {
+function rowGap(
+  kind: "day-divider" | "group-start" | "grouped" | "system" | "tool",
+  first: boolean,
+): string {
   if (first) return "0";
   switch (kind) {
     case "day-divider":
@@ -57,6 +62,8 @@ function rowGap(kind: "day-divider" | "group-start" | "grouped" | "system", firs
     case "grouped":
       return "var(--hc-space-1)";
     case "system":
+      return "var(--hc-space-2)";
+    case "tool":
       return "var(--hc-space-2)";
   }
 }
@@ -91,6 +98,9 @@ export function MessageList({
   });
 
   const rows = useMemo(() => layoutTimeline(items), [items]);
+  // Majority session across the visible tool calls — a call from another session
+  // is attributed to a subagent (we can't know the "main" session id client-side).
+  const majSession = useMemo(() => majoritySession(items), [items]);
 
   // Stabilize onRetry so memoized bubbles don't re-render on every snapshot: the
   // `useChat` hook hands a fresh retry closure each snapshot; a ref keeps identity.
@@ -238,6 +248,24 @@ export function MessageList({
                   return (
                     <div key={row.event.id} style={{ marginTop: mt }}>
                       <SystemEventRow event={row.event} />
+                    </div>
+                  );
+                }
+                if (row.kind === "tool") {
+                  const mt = rowGap("tool", firstRendered);
+                  firstRendered = false;
+                  return (
+                    <div key={`tool_${row.toolCall.id}`} style={{ marginTop: mt }}>
+                      <ToolCallRow toolCall={row.toolCall} majoritySessionId={majSession} />
+                    </div>
+                  );
+                }
+                if (row.kind === "tool-cluster") {
+                  const mt = rowGap("tool", firstRendered);
+                  firstRendered = false;
+                  return (
+                    <div key={row.id} style={{ marginTop: mt }}>
+                      <ToolCallCluster tools={row.tools} majoritySessionId={majSession} />
                     </div>
                   );
                 }

@@ -25,9 +25,32 @@ User plugin at:
 ```text
 /home/hermes/.hermes/plugins/canvas
   plugin.yaml
-  __init__.py      # hooks + tools
+  __init__.py      # hooks + tools + gateway-only reporter daemons
   client.py        # authenticated /agent/* client
 ```
+
+A byte-exact provenance copy of the deployed `__init__.py` + `client.py` lives
+in `docs/host-plugin-snapshot/` (not committed).
+
+### Gateway-only reporter daemons
+
+The plugin runs three background daemons, each a flock-guarded singleton that
+starts only inside the long-lived gateway process (never per-turn workers):
+
+- **Jobs reporter** (`.jobs_reporter.lock`) — registers the connector heartbeat
+  and mirrors real hermes cron runs into the Canvas cron viewer.
+- **Status reporter** (`.status_reporter.lock`) — `PUT /agent/status` every
+  ~5 min plus an opportunistic, ≥60 s-debounced report after each turn
+  (`post_llm_call`), feeding the Settings → Agent panel. Reads the live route
+  and context from the in-process `GatewayRunner._agent_cache` (reached by a
+  cached gc reflection, since `PluginContext` does not expose the runner) and
+  falls back to `~/.hermes/config.yaml` + gateway package metadata. Every field
+  is best-effort: unreadable fields are omitted, never fabricated.
+- **Memory shipper** (shares the status thread) — `PUT /agent/memory` full
+  mirror of the curated memory store (`~/.hermes/memories/MEMORY.md` +
+  `USER.md`, `§`-delimited) on gateway start and every ~15 min when changed.
+  Entry ids are stable content hashes; content is passed through
+  `agent.redact.redact_sensitive_text` before leaving the host.
 
 Config:
 

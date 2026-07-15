@@ -9,6 +9,7 @@
  */
 
 import type * as agentInfra from "../agentInfra.js";
+import type * as agentToolCalls from "../agentToolCalls.js";
 import type * as agentWrites from "../agentWrites.js";
 import type * as auth from "../auth.js";
 import type * as authGuard from "../authGuard.js";
@@ -34,6 +35,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agentInfra: typeof agentInfra;
+  agentToolCalls: typeof agentToolCalls;
   agentWrites: typeof agentWrites;
   auth: typeof auth;
   authGuard: typeof authGuard;
